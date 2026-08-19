@@ -35,7 +35,6 @@ ssize_t CCTRLServer::Read(char* data, ssize_t sizeOfData)
 
 ssize_t CCTRLServer::Send(char* data, ssize_t sizeOfData)
 {
-		printf("send3\n");
 		return CSocket::Send(GetSocketClient(0),data, sizeOfData);
 }
 

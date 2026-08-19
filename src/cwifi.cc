@@ -67,13 +67,13 @@ bool CWifi::PacketIsLost(TPower signalLevel)
 
 ssize_t CWifi::SendSignalWithSocket(CSocket* socket, TDescriptor descriptor, TPower* power, const char* buffer, int sizeOfBuffer)
 {
-	std::cout<<"send power : "<<power<<std::endl;
+//	std::cout<<"send power : "<<power<<std::endl;
 	int val=socket->Send(descriptor, reinterpret_cast<const char*>(power), sizeof(TPower));
 
 	if( val <= 0 )
 		return val;
 
-	std::cout<<"send big data of size : "<<sizeOfBuffer<<std::endl;
+//	std::cout<<"send big data of size : "<<sizeOfBuffer<<std::endl;
         const auto start = std::chrono::steady_clock::now();
 	int ret = socket->Send(descriptor, buffer, sizeOfBuffer);
         const auto end = std::chrono::steady_clock::now();
@@ -101,6 +101,11 @@ ssize_t CWifi::SendSignalWithSocket(CSocket* socket, TDescriptor descriptor, TPo
                 }
                 fflush(stdout);
         }
+	int dif = sizeOfBuffer - ret;
+	std::cout<<"requested send of : "<<sizeOfBuffer<<", sent "<<ret<<std::endl;
+	if (dif > 0) {
+		std::cout<<"missing "<<dif<<std::endl;
+	}
 	return ret;
 }
 

@@ -149,13 +149,11 @@ void CSocketServer::CloseClient(TIndex index)
 
 ssize_t CSocketServer::Send(TDescriptor descriptor, const char* data, ssize_t sizeOfData)
 {
-	printf("send1\n");
 	return CSocket::Send(descriptor, data, sizeOfData);
 }
 
 ssize_t CSocketServer::SendBigData(TDescriptor descriptor, const char* data, TMinimalSize sizeOfData)
 {
-	printf("send2\n");
 	return CSocket::SendBigData(descriptor, data, sizeOfData);
 }
 
