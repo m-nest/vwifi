@@ -92,6 +92,9 @@ int vwifi_server()
 	CListInfo<CInfoWifi> infoWifis;
 	CListInfo<CInfoWifi> infoWifisDeconnected;
 
+	printf("===== VWIFI SERVER DEBUG BUILD =====\n");
+	fflush(stdout);
+
 #ifdef ENABLE_VHOST
 	CWifiServerVTCP wifiServerVTCP(&infoSockets,&infoWifis,&infoWifisDeconnected);
 	cout<<"CLIENT VHOST : ";
