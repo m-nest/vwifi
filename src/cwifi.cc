@@ -1,6 +1,9 @@
 #include <math.h>    // log10
 #include <stdlib.h>  // rand
 
+#include <cerrno>
+#include <cstring>
+#include <chrono>
 #include <iostream>
 
 #include <netlink/netlink.h> // (struct nlmsghdr *)
@@ -66,11 +69,39 @@ ssize_t CWifi::SendSignalWithSocket(CSocket* socket, TDescriptor descriptor, TPo
 {
 //	cout<<"send power : "<<power<<endl;
 	int val=socket->Send(descriptor, reinterpret_cast<const char*>(power), sizeof(TPower));
+
 	if( val <= 0 )
 		return val;
 
 //	std::cout<<"send big data of size : "<<sizeOfBuffer<<std::endl;
-	return socket->Send(descriptor, buffer, sizeOfBuffer);
+        const auto start = std::chrono::steady_clock::now();
+	int ret = socket->Send(descriptor, buffer, sizeOfBuffer);
+        const auto end = std::chrono::steady_clock::now();
+
+        const auto elapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+        if (elapsed > 1000) {
+                if (ret < 0) {
+                        printf("SLOW SEND: socket=%d requested=%d returned=%d "
+                                "elapsed=%lld ms errno=%d (%s)\n",
+                                socket,
+                                sizeOfBuffer,
+                                ret,
+                                static_cast<long long>(elapsed),
+                                errno,
+                                strerror(errno));
+                } else {
+                        printf("SLOW SEND: socket=%d requested=%d returned=%d "
+                                "elapsed=%lld ms\n",
+                                socket,
+                                sizeOfBuffer,
+                                ret,
+                                static_cast<long long>(elapsed));
+                }
+                fflush(stdout);
+        }
+	return ret;
 }
 
 ssize_t CWifi::RecvSignalWithSocket(CSocket* socket, TDescriptor descriptor, TPower* power, CDynBuffer* buffer)
