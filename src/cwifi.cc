@@ -74,9 +74,9 @@ ssize_t CWifi::SendSignalWithSocket(CSocket* socket, TDescriptor descriptor, TPo
 		return val;
 
 //	std::cout<<"send big data of size : "<<sizeOfBuffer<<std::endl;
-        const auto start = std::chrono::steady_clock::now();
+//        const auto start = std::chrono::steady_clock::now();
 	int ret = socket->Send(descriptor, buffer, sizeOfBuffer);
-        const auto end = std::chrono::steady_clock::now();
+/*        const auto end = std::chrono::steady_clock::now();
 
         const auto elapsed =
         std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
@@ -100,9 +100,9 @@ ssize_t CWifi::SendSignalWithSocket(CSocket* socket, TDescriptor descriptor, TPo
                                 static_cast<long long>(elapsed));
                 }
                 fflush(stdout);
-        }
+        }*/
 	int dif = sizeOfBuffer - ret;
-	std::cout<<"requested send of : "<<sizeOfBuffer<<", sent "<<ret<<std::endl;
+//	std::cout<<"requested send of : "<<sizeOfBuffer<<", sent "<<ret<<std::endl;
 	if (dif > 0) {
 		std::cout<<"missing "<<dif<<std::endl;
 	}
