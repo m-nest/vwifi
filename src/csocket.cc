@@ -34,7 +34,6 @@ TDescriptor CSocket::GetDescriptor() const
 
 ssize_t CSocket::Send(TDescriptor descriptor, const char* data, ssize_t sizeOfData)
 {
-	printf("send4\n");
 	ssize_t ret = send(descriptor, data, sizeOfData, 0);
 	if ( ret != sizeOfData )
 		return SOCKET_ERROR ;
