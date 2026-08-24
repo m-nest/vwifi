@@ -504,10 +504,12 @@ void CKernelWifi::recv_from_server(){
 	/* we get frequence */
 	TFrequency freq = radio_info.frequency;
 	/* fallback - just in case */
-	if (freq == 0 && attrs[HWSIM_ATTR_FREQ])
-		freq = nla_get_u32(attrs[HWSIM_ATTR_FREQ]);
-	else
-		freq = 0;
+	if (freq == 0)
+	{
+	    /* Fallback - just in case */
+    	if (attrs[HWSIM_ATTR_FREQ])
+        	freq = nla_get_u32(attrs[HWSIM_ATTR_FREQ]);
+	}
 
 #ifdef _DEBUG
 	std::cout << "freq : " << freq << " (received " << radio_info.frequency << ")" << std::endl ;
