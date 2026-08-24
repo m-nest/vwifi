@@ -21,11 +21,11 @@ class CWifiClient : public CKernelWifi, public CWifi, public TypeCSocketClient
 			return true;
 		}
 
-		ssize_t _SendSignal(TPower* power, const char* buffer, int sizeOfBuffer) override
-			{	return SendSignalWithSocket(this, this->GetDescriptor(), power, buffer, sizeOfBuffer); }
+		ssize_t _SendSignal(VwifiRadioInfo* radio_info, const char* buffer, int sizeOfBuffer) override
+			{	return SendSignalWithSocket(this, this->GetDescriptor(), radio_info, buffer, sizeOfBuffer); }
 
-		ssize_t _RecvSignal(TPower* power, CDynBuffer* buffer) override
-			{	return RecvSignalWithSocket(this, this->GetDescriptor(), power, buffer); }
+		ssize_t _RecvSignal(VwifiRadioInfo* radio_info, CDynBuffer* buffer) override
+			{	return RecvSignalWithSocket(this, this->GetDescriptor(), radio_info, buffer); }
 
 		void _Close() override { TypeCSocketClient::Close(); };
 };

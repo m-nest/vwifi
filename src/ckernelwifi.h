@@ -233,8 +233,8 @@ class CKernelWifi : public intthread::AsyncTask {
 
 		virtual bool _Connect(int* id) = 0;
 
-		virtual ssize_t _SendSignal(TPower* power, const char* buffer, int sizeOfBuffer) = 0;
-		virtual ssize_t _RecvSignal(TPower* power, CDynBuffer* buffer) = 0;
+		virtual ssize_t _SendSignal(VwifiRadioInfo* radio_info, const char* buffer, int sizeOfBuffer) = 0;
+		virtual ssize_t _RecvSignal(VwifiRadioInfo* radio_info, CDynBuffer* buffer) = 0;
 
 		virtual void _Close() = 0;
 

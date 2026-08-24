@@ -44,11 +44,19 @@ typedef double TDistance; // in meters
 typedef double TScale;
 
 // u32
-typedef u32 TFrequency; // Hz
+typedef u32 TFrequency; // MHz
 
 // unsigned short
 typedef u16 TMinimalSize;
 
 typedef u8 TByte;
+
+struct VwifiRadioInfo
+{
+    uint32_t radio_id;
+    uint32_t frequency;
+    uint32_t channel_width;
+    int32_t  tx_power;
+};
 
 #endif

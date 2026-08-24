@@ -188,27 +188,33 @@ int CKernelWifi::process_messages(struct nl_msg *msg)
 		memcpy(reinterpret_cast<char *>(nlh) + 24, &framesrc, ETH_ALEN);
 	}
 
-	/* send msg to a server */
-	TPower power=10;
+	/*
+	 * Build RF metadata for the frame.
+ 	*/
+	VwifiRadioInfo radio_info{};
+	radio_info.radio_id = 0;
+	radio_info.channel_width = 0;
 
-	WirelessDevice  dev ;
-	if ( _list_winterfaces.get_device_by_mac(dev,framesrc))
-	{
-		power = dev.getTxPower() / 100; // must add the remainder if not multiple of 2
-	}
-
-	int value=_SendSignal(&power, reinterpret_cast<char*>(nlh), msg_len);
-	if( value == SOCKET_ERROR )
-		manage_server_crash();
-
-	// Send also on the others interfaces on the same VM :
-	// ------------------->
-	/* we get frequence */
 	TFrequency freq;
 	if (attrs[HWSIM_ATTR_FREQ])
 		freq = nla_get_u32(attrs[HWSIM_ATTR_FREQ]);
 	else
 		freq = 0;
+	radio_info.frequency = freq;
+
+	radio_info.tx_power = 10;
+	WirelessDevice  dev ;
+	if ( _list_winterfaces.get_device_by_mac(dev,framesrc))
+	{
+		radio_info.tx_power = dev.getTxPower() / 100; // must add the remainder if not multiple of 2
+	}
+
+	int value=_SendSignal(&radio_info, reinterpret_cast<char*>(nlh), msg_len);
+	if( value == SOCKET_ERROR )
+		manage_server_crash();
+
+	// Send also on the others interfaces on the same VM :
+	// ------------------->
 
 	int rate_idx = 7; // number of attempts
 
@@ -217,7 +223,7 @@ int CKernelWifi::process_messages(struct nl_msg *msg)
 	{
 		struct ether_addr macdsthwsim = inet.getMachwsim();
 		if( memcmp(&macsrchwsim,&macdsthwsim,sizeof(struct ether_addr)) ) // if( macsrchwsim != macdsthwsim )
-			send_cloned_frame_msg(&macdsthwsim, data, data_len, rate_idx, power, freq);
+			send_cloned_frame_msg(&macdsthwsim, data, data_len, rate_idx, radio_info.tx_power, radio_info.frequency);
 	}
 	delete &inets;
 	// <------------------------
@@ -466,11 +472,17 @@ void CKernelWifi::recv_from_server(){
 	if( ! Scheduler.NodeHasAction(0) )
 		return ;
 
-	TPower power;
-	if( _RecvSignal(&power, &Buffer) == SOCKET_ERROR )
-		manage_server_crash();
+	VwifiRadioInfo radio_info{};
 
-	int signal = power ;
+	if (_RecvSignal(&radio_info, &Buffer) == SOCKET_ERROR){
+    	manage_server_crash();
+		return;
+	}
+
+	int signal = radio_info.tx_power;
+#ifdef _DEBUG
+	std::cout << "tx_power : " << signal << std::endl ;
+#endif
 
 	/* netlink header */
 	struct nlmsghdr* nlh = reinterpret_cast<struct nlmsghdr *>(Buffer.GetBuffer());
@@ -490,15 +502,15 @@ void CKernelWifi::recv_from_server(){
 	genlmsg_parse(nlh, 0, attrs, HWSIM_ATTR_MAX, NULL);
 
 	/* we get frequence */
-	TFrequency freq;
-	if (attrs[HWSIM_ATTR_FREQ])
+	TFrequency freq = radio_info.frequency;
+	/* fallback - just in case */
+	if (freq == 0 && attrs[HWSIM_ATTR_FREQ])
 		freq = nla_get_u32(attrs[HWSIM_ATTR_FREQ]);
 	else
 		freq = 0;
 
 #ifdef _DEBUG
-
-	std::cout << "freq : " << freq << std::endl ;
+	std::cout << "freq : " << freq << " (received " << radio_info.frequency << ")" << std::endl ;
 #endif
 
 	if (!attrs[HWSIM_ATTR_ADDR_TRANSMITTER]) {

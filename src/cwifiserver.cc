@@ -182,52 +182,56 @@ void CWifiServer::CloseAllClient()
 		CloseClient(0); // we can Close the 0 because we use the shift
 }
 
-ssize_t CWifiServer::SendSignal(TDescriptor descriptor, TPower* power, const char* buffer, int sizeOfBuffer)
+ssize_t CWifiServer::SendSignal(TDescriptor descriptor, VwifiRadioInfo* radio_info, const char* buffer, int sizeOfBuffer)
 {
-	return SendSignalWithSocket(this, descriptor, power, buffer, sizeOfBuffer);
+	return SendSignalWithSocket(this, descriptor, radio_info, buffer, sizeOfBuffer);
 }
 
-ssize_t CWifiServer::RecvSignal(TDescriptor descriptor, TPower* power, CDynBuffer* buffer)
+ssize_t CWifiServer::RecvSignal(TDescriptor descriptor, VwifiRadioInfo* radio_info, CDynBuffer* buffer)
 {
-	return RecvSignalWithSocket(this, descriptor, power, buffer);
+	return RecvSignalWithSocket(this, descriptor, radio_info, buffer);
 }
 
-void CWifiServer::SendAllOtherClients(TIndex index,TPower power, const char* data, ssize_t sizeOfData)
+void CWifiServer::SendAllOtherClients(TIndex index, VwifiRadioInfo* radio_info, const char* data, ssize_t sizeOfData)
 {
-	CCoordinate coo=(*InfoWifis)[index];
-//	cout<<"Forward "<<sizeOfData<<" bytes with "<<power<<" powers"<<endl;
+    CCoordinate coo = (*InfoWifis)[index];
 
+    for (TIndex i = 0; i < GetNumberClient(); i++)
+    {
+        if (i != index && IsEnable(i))
+        {
+            VwifiRadioInfo destination_info = *radio_info;
+
+            destination_info.tx_power = BoundedPower(
+                    destination_info.tx_power - Attenuation(
+                        coo.DistanceWith((*InfoWifis)[i]), destination_info.frequency));
+
+            if (!CanLostPackets || !PacketIsLost(destination_info.tx_power))
+            {
+                if (SendSignal((*InfoSockets)[i].GetDescriptor(), &destination_info, data, sizeOfData) < 0)
+                {
+                    (*InfoSockets)[i].DisableIt();
+                }
+            }
+        }
+    }
+}
+
+void CWifiServer::SendAllOtherClientsWithoutLoss(TIndex index, VwifiRadioInfo* radio_info, const char* data, ssize_t sizeOfData)
+{
 	for (TIndex i = 0; i < GetNumberClient(); i++)
 	{
-		if( i != index )
-			if( IsEnable(i) )
-			{
-				TFrequency frequency = static_cast<TFrequency>(GetFrequency(  reinterpret_cast<struct nlmsghdr*>(const_cast<char*>(data)) ));
-				TPower signalLevel=BoundedPower(power-Attenuation(coo.DistanceWith((*InfoWifis)[i]),frequency));
-
-				if( ! CanLostPackets || ! PacketIsLost(signalLevel) )
-					if( SendSignal((*InfoSockets)[i].GetDescriptor(), &signalLevel, data, sizeOfData) < 0 )
-						(*InfoSockets)[i].DisableIt();
-			}
+		if( i != index && IsEnable(i) )
+			if( SendSignal((*InfoSockets)[i].GetDescriptor(), radio_info, data, sizeOfData) < 0 )
+				(*InfoSockets)[i].DisableIt();
 	}
 }
 
-void CWifiServer::SendAllOtherClientsWithoutLoss(TIndex index, TPower power, const char* data, ssize_t sizeOfData)
-{
-	for (TIndex i = 0; i < GetNumberClient(); i++)
-	{
-		if( i != index )
-			if( IsEnable(i) )
-				if( SendSignal((*InfoSockets)[i].GetDescriptor(), &power, data, sizeOfData) < 0 )
-					(*InfoSockets)[i].DisableIt();
-	}
-}
-
-void CWifiServer::SendAllClientsWithoutLoss(TPower power, const char* data, ssize_t sizeOfData)
+void CWifiServer::SendAllClientsWithoutLoss(VwifiRadioInfo* radio_info, const char* data, ssize_t sizeOfData)
 {
 	for (TIndex i = 0; i < GetNumberClient(); i++)
 		if( IsEnable(i) )
-			if( SendSignal((*InfoSockets)[i].GetDescriptor(), &power, data, sizeOfData) < 0 )
+			if( SendSignal((*InfoSockets)[i].GetDescriptor(), radio_info, data, sizeOfData) < 0 )
 				(*InfoSockets)[i].DisableIt();
 }
 

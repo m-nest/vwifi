@@ -41,47 +41,44 @@ void RemoveClient(CWifiServer* srv, bool srvIsSpy, TIndex i, TDescriptor socket)
 
 void ForwardData(bool srcIsSpy, CWifiServer* src, CWifiServer* otherDst)
 {
-	int valread;
-	TPower power;
+    int valread;
+    VwifiRadioInfo radio_info{};
 
-	for ( TIndex i = 0 ; i < src->GetNumberClient() ; )
-	{
-		TDescriptor socket = (*src)[i];
+    for (TIndex i = 0; i < src->GetNumberClient(); )
+    {
+        TDescriptor socket = (*src)[i];
 
-		if( ! src->IsEnable(i) )
-		{
-			RemoveClient(src, srcIsSpy , i, socket);
+        if (!src->IsEnable(i))
+        {
+            RemoveClient(src, srcIsSpy, i, socket);
+            continue;
+        }
 
-			continue;
-		}
+        if (Scheduler.DescriptorHasAction(socket))
+        {
+            valread = src->RecvSignal(socket, &radio_info, &Buffer);
 
-		if( Scheduler.DescriptorHasAction(socket) )
-		{
-			//Check if it was for closing , and also read the
-			//incoming message
+            if (valread <= 0)
+            {
+                RemoveClient(src, srcIsSpy, i, socket);
+                continue;
+            }
 
-			valread=src->RecvSignal(socket,&power,&Buffer);
-			if( valread <=0 )
-			{
-				RemoveClient(src, srcIsSpy , i, socket);
+            if (!srcIsSpy)
+            {
+                src->SendAllOtherClients(i, &radio_info, Buffer.GetBuffer(), valread);
 
-				continue;
-			}
+                otherDst->SendAllClientsWithoutLoss(&radio_info, Buffer.GetBuffer(), valread);
+            }
+            else
+            {
+                src->SendAllOtherClientsWithoutLoss(i, &radio_info, Buffer.GetBuffer(), valread);
 
-			if( ! srcIsSpy )
-			{
-				src->SendAllOtherClients(i,power,Buffer.GetBuffer(),valread);
-				otherDst->SendAllClientsWithoutLoss(power,Buffer.GetBuffer(),valread);
-			}
-			else
-			{
-				src->SendAllOtherClientsWithoutLoss(i,power,Buffer.GetBuffer(),valread);
-				otherDst->SendAllClientsWithoutLoss(power,Buffer.GetBuffer(),valread);
-			}
-		}
-
-		i++;
-	}
+                otherDst->SendAllClientsWithoutLoss(&radio_info, Buffer.GetBuffer(), valread);
+            }
+        }
+        i++;
+    }
 }
 
 int vwifi_server()

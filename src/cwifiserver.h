@@ -44,15 +44,15 @@ class CWifiServer : public CSocketServer, public CWifi
 
 		void CloseAllClient();
 
-		ssize_t SendSignal(TDescriptor descriptor, TPower* power, const char* buffer, int sizeOfBuffer);
+		ssize_t SendSignal(TDescriptor descriptor, VwifiRadioInfo* radio_info, const char* buffer, int sizeOfBuffer);
 
-		ssize_t RecvSignal(TDescriptor descriptor, TPower* power, CDynBuffer* buffer);
+		ssize_t RecvSignal(TDescriptor descriptor, VwifiRadioInfo* radio_info, CDynBuffer* buffer);
 
-		void SendAllOtherClients(TIndex index,TPower power, const char* data, ssize_t sizeOfData);
+		void SendAllOtherClients(TIndex index, VwifiRadioInfo* radio_info, const char* data, ssize_t sizeOfData);
 
-		void SendAllOtherClientsWithoutLoss(TIndex index, TPower power, const char* data, ssize_t sizeOfData);
+		void SendAllOtherClientsWithoutLoss(TIndex index, VwifiRadioInfo* radio_info, const char* data, ssize_t sizeOfData);
 
-		void SendAllClientsWithoutLoss(TPower power, const char* data, ssize_t sizeOfData);
+		void SendAllClientsWithoutLoss(VwifiRadioInfo* radio_info, const char* data, ssize_t sizeOfData);
 
 		CInfoWifi* GetReferenceOnInfoWifiByCID(TCID cid) const;
 

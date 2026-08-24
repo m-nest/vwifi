@@ -62,10 +62,10 @@ bool CWifi::PacketIsLost(TPower signalLevel)
 	return true;
 }
 
-ssize_t CWifi::SendSignalWithSocket(CSocket* socket, TDescriptor descriptor, TPower* power, const char* buffer, int sizeOfBuffer)
+ssize_t CWifi::SendSignalWithSocket(CSocket* socket, TDescriptor descriptor, VwifiRadioInfo* radio_info, const char* buffer, int sizeOfBuffer)
 {
-//	cout<<"send power : "<<power<<endl;
-	int val=socket->Send(descriptor, reinterpret_cast<const char*>(power), sizeof(TPower));
+//	cout<<"send power : "<<radio_info->power<<endl;
+	int val=socket->Send(descriptor, reinterpret_cast<const char*>(radio_info), sizeof(VwifiRadioInfo));
 	if( val <= 0 )
 		return val;
 
@@ -73,12 +73,12 @@ ssize_t CWifi::SendSignalWithSocket(CSocket* socket, TDescriptor descriptor, TPo
 	return socket->Send(descriptor, buffer, sizeOfBuffer);
 }
 
-ssize_t CWifi::RecvSignalWithSocket(CSocket* socket, TDescriptor descriptor, TPower* power, CDynBuffer* buffer)
+ssize_t CWifi::RecvSignalWithSocket(CSocket* socket, TDescriptor descriptor, VwifiRadioInfo* radio_info, CDynBuffer* buffer)
 {
 	int valread;
 
 	// read the power
-	valread = socket->Read(descriptor, reinterpret_cast<char*>(power), sizeof(TPower));
+	valread = socket->Read(descriptor, reinterpret_cast<char*>(radio_info), sizeof(VwifiRadioInfo));
 	if ( valread <= 0 )
 		return valread;
 
