@@ -65,9 +65,22 @@ bool CWifi::PacketIsLost(TPower signalLevel)
 ssize_t CWifi::SendSignalWithSocket(CSocket* socket, TDescriptor descriptor, VwifiRadioInfo* radio_info, const char* buffer, int sizeOfBuffer)
 {
 //	cout<<"send power : "<<radio_info->power<<endl;
+	std::cerr
+    << "Sending radio_info: "
+    << sizeof(VwifiRadioInfo)
+    << " bytes"
+    << std::endl;
+
 	int val=socket->Send(descriptor, reinterpret_cast<const char*>(radio_info), sizeof(VwifiRadioInfo));
 	if( val <= 0 )
 		return val;
+	std::cerr
+    << "radio_info send: "
+    << val
+    << " / "
+    << sizeof(VwifiRadioInfo)
+    << " bytes"
+    << std::endl;
 
 //	std::cout<<"send big data of size : "<<sizeOfBuffer<<std::endl;
 	return socket->Send(descriptor, buffer, sizeOfBuffer);
