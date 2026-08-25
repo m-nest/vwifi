@@ -81,6 +81,13 @@ ssize_t CWifi::RecvSignalWithSocket(CSocket* socket, TDescriptor descriptor, Vwi
 	valread = socket->Read(descriptor, reinterpret_cast<char*>(radio_info), sizeof(VwifiRadioInfo));
 	if ( valread <= 0 )
 		return valread;
+	std::cerr
+    << "radio_info read: "
+    << valread
+    << " / "
+    << sizeof(VwifiRadioInfo)
+    << " bytes"
+    << std::endl;
 
 	// read the signal
 	// "nlmsg_len" (type "uint32_t") is the first attribut of the "struct nlmsghdr" in "libnl3/netlink/netlink-kernel.h"
