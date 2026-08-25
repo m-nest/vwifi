@@ -29,6 +29,7 @@ class CSocket
 		virtual ssize_t ReadBigData(TDescriptor descriptor, CDynBuffer* data);
 
 	private :
+		ssize_t SendEqualSize(TDescriptor descriptor, const char* buffer, size_t size);
 		ssize_t ReadEqualSize(TDescriptor descriptor, CDynBuffer* data, ssize_t byteAlreadyRead, ssize_t sizeToRead);
 
 	public :

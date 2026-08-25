@@ -34,20 +34,37 @@ TDescriptor CSocket::GetDescriptor() const
 
 ssize_t CSocket::Send(TDescriptor descriptor, const char* data, ssize_t sizeOfData)
 {
-	ssize_t ret = send(descriptor, data, sizeOfData, 0);
+	ssize_t ret = SendEqualSize(descriptor, data, sizeOfData);
 	if ( ret != sizeOfData )
 		return SOCKET_ERROR ;
 
 	return ret;
 }
 
+ssize_t CSocket::SendEqualSize(TDescriptor descriptor, const char* buffer, size_t size)
+{
+    size_t total = 0;
+
+    while (total < size)
+    {
+        ssize_t sent = send(descriptor, buffer + total, size - total, 0);
+
+        if (sent <= 0)
+            return sent;
+
+        total += sent;
+    }
+
+    return static_cast<ssize_t>(total);
+}
+
 ssize_t CSocket::SendBigData(TDescriptor descriptor, const char* data, TMinimalSize sizeOfData)
 {
-	ssize_t ret = Send(descriptor, (char*)&sizeOfData, (unsigned)sizeof(sizeOfData));
+	ssize_t ret = SendEqualSize(descriptor, (char*)&sizeOfData, (unsigned)sizeof(sizeOfData));
 	if( ret == SOCKET_ERROR )
 		return SOCKET_ERROR;
 
-	return Send(descriptor, data, sizeOfData);
+	return SendEqualSize(descriptor, data, sizeOfData);
 }
 
 ssize_t CSocket::Read(TDescriptor descriptor, char* data, ssize_t sizeOfData)
