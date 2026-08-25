@@ -30,6 +30,7 @@ class CSocket
 
 	private :
 		ssize_t SendEqualSize(TDescriptor descriptor, const char* buffer, size_t size);
+		ssize_t ReadEqualSize(TDescriptor descriptor, char* buffer, size_t size);
 		ssize_t ReadEqualSize(TDescriptor descriptor, CDynBuffer* data, ssize_t byteAlreadyRead, ssize_t sizeToRead);
 
 	public :

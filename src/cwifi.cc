@@ -90,8 +90,8 @@ ssize_t CWifi::RecvSignalWithSocket(CSocket* socket, TDescriptor descriptor, Vwi
 {
 	int valread;
 
-	// read the power
-	valread = socket->Read(descriptor, reinterpret_cast<char*>(radio_info), sizeof(VwifiRadioInfo));
+	// read the metadata
+	valread = socket->ReadEqualSize(descriptor, reinterpret_cast<char*>(radio_info), sizeof(VwifiRadioInfo));
 	if ( valread <= 0 )
 		return valread;
 	std::cerr
