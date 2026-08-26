@@ -489,13 +489,14 @@ void CKernelWifi::recv_from_server(){
 
 	/* generic netlink header */
 	struct genlmsghdr* gnlh = reinterpret_cast<struct genlmsghdr*>(nlmsg_data(nlh));
-
+#ifdef _DEBUG
 	std::cerr
     << "nlmsg_len=" << nlh->nlmsg_len
     << " nlmsg_type=" << nlh->nlmsg_type
     << " genl_cmd=" << static_cast<int>(gnlh->cmd)
     << " expected=" << HWSIM_CMD_FRAME
     << std::endl;
+#endif
 	/* exit if the message does not contain frame data */
 	if (gnlh->cmd != HWSIM_CMD_FRAME) {
 

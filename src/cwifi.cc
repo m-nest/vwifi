@@ -65,15 +65,17 @@ bool CWifi::PacketIsLost(TPower signalLevel)
 ssize_t CWifi::SendSignalWithSocket(CSocket* socket, TDescriptor descriptor, VwifiRadioInfo* radio_info, const char* buffer, int sizeOfBuffer)
 {
 //	cout<<"send power : "<<radio_info->power<<endl;
+#ifdef _DEBUG
 	std::cerr
     << "Sending radio_info: "
     << sizeof(VwifiRadioInfo)
     << " bytes"
     << std::endl;
-
+#endif
 	int val=socket->Send(descriptor, reinterpret_cast<const char*>(radio_info), sizeof(VwifiRadioInfo));
 	if( val <= 0 )
 		return val;
+#ifdef _DEBUG
 	std::cerr
     << "radio_info send: "
     << val
@@ -81,7 +83,7 @@ ssize_t CWifi::SendSignalWithSocket(CSocket* socket, TDescriptor descriptor, Vwi
     << sizeof(VwifiRadioInfo)
     << " bytes"
     << std::endl;
-
+#endif
 //	std::cout<<"send big data of size : "<<sizeOfBuffer<<std::endl;
 	return socket->Send(descriptor, buffer, sizeOfBuffer);
 }
@@ -94,6 +96,7 @@ ssize_t CWifi::RecvSignalWithSocket(CSocket* socket, TDescriptor descriptor, Vwi
 	valread = socket->ReadEqualSize(descriptor, reinterpret_cast<char*>(radio_info), sizeof(VwifiRadioInfo));
 	if ( valread <= 0 )
 		return valread;
+#ifdef _DEBUG
 	std::cerr
     << "radio_info read: "
     << valread
@@ -101,7 +104,7 @@ ssize_t CWifi::RecvSignalWithSocket(CSocket* socket, TDescriptor descriptor, Vwi
     << sizeof(VwifiRadioInfo)
     << " bytes"
     << std::endl;
-
+#endif
 	// read the signal
 	// "nlmsg_len" (type "uint32_t") is the first attribut of the "struct nlmsghdr" in "libnl3/netlink/netlink-kernel.h"
 	ssize_t sizeRead = socket->ReadEqualSize(descriptor, buffer, 0, sizeof(struct nlmsghdr));
