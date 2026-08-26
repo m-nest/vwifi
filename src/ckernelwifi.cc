@@ -223,20 +223,6 @@ int CKernelWifi::process_messages(struct nl_msg *msg)
 	radio_info.channel_width = 20;
 	radio_info.tx_power = 0;
 
-	if (attrs[NL80211_ATTR_WIPHY])
-	{
-    	uint32_t wiphy =
-        		nla_get_u32(attrs[NL80211_ATTR_WIPHY]);
-
-    	std::cerr << "NL80211_ATTR_WIPHY = "
-    	          << wiphy << std::endl;
-	}
-	else
-	{
-    	std::cerr << "NL80211_ATTR_WIPHY is missing"
-        	      << std::endl;
-	}
-
 	if (attrs[NL80211_ATTR_CHANNEL_WIDTH])
     	radio_info.channel_width =
         	get_channel_width(attrs[NL80211_ATTR_CHANNEL_WIDTH]);

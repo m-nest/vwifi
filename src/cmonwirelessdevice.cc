@@ -557,6 +557,20 @@ int MonitorWirelessDevice::recv_winterface_infos(struct nl_msg *msg){
 	else
 		return NL_SKIP;
 
+	if (tb_msg[NL80211_ATTR_WIPHY])
+	{
+    	uint32_t wiphy = nla_get_u32(tb_msg[NL80211_ATTR_WIPHY]);
+
+    	std::cerr << "Interface " << ifname
+        	      << " belongs to wiphy " << wiphy
+            	  << std::endl;
+	}
+	else
+	{
+    	std::cerr << "No NL80211_ATTR_WIPHY for "
+        	      << ifname << std::endl;
+	}
+
 	if (tb_msg[NL80211_ATTR_MAC])
 
 		std::memcpy(&macaddr, static_cast<void *>(nla_data(tb_msg[NL80211_ATTR_MAC])), ETH_ALEN);
