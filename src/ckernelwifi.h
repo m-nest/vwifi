@@ -169,6 +169,8 @@ class CKernelWifi : public intthread::AsyncTask {
 
 		static void recv_msg_from_server_signal_handle(int sig_num);
 
+		static uint32_t get_channel_width(struct nlattr *attr);
+
 		/**
 		 *	@brief this is meant to be a thread which detects removal of driver
 		*	Used to suspend normal actions until driver is loaded

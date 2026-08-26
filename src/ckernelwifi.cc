@@ -36,6 +36,32 @@ CDynBuffer Buffer;
 /* allow calling non static function from static function */
 ckernelwifi::CallFromStaticFunc * CKernelWifi::forward = nullptr ;
 
+uint32_t CKernelWifi::get_channel_width(struct nlattr *attr)
+{
+    if (!attr)
+        return 20;
+
+    switch (nla_get_u32(attr))
+    {
+        case NL80211_CHAN_WIDTH_20_NOHT:
+        case NL80211_CHAN_WIDTH_20:
+            return 20;
+
+        case NL80211_CHAN_WIDTH_40:
+            return 40;
+
+        case NL80211_CHAN_WIDTH_80:
+            return 80;
+
+        case NL80211_CHAN_WIDTH_80P80:
+        case NL80211_CHAN_WIDTH_160:
+            return 160;
+
+        default:
+            return 20;
+    }
+}
+
 void CKernelWifi::cout_mac_address(struct ether_addr *src)
 {
 	char addr[18];
@@ -193,7 +219,18 @@ int CKernelWifi::process_messages(struct nl_msg *msg)
  	*/
 	VwifiRadioInfo radio_info{};
 	radio_info.radio_id = 0;
-	radio_info.channel_width = 0;
+	radio_info.frequency = 0;
+	radio_info.channel_width = 20;
+	radio_info.tx_power = 0;
+
+	if (attrs[NL80211_ATTR_WIPHY])
+    	radio_info.radio_id = nla_get_u32(attrs[NL80211_ATTR_WIPHY]);
+
+	if (attrs[NL80211_ATTR_CHANNEL_WIDTH])
+    	radio_info.channel_width =
+        	get_channel_width(attrs[NL80211_ATTR_CHANNEL_WIDTH]);
+	else
+    	radio_info.channel_width = 20;
 
 	TFrequency freq;
 	if (attrs[HWSIM_ATTR_FREQ])
@@ -208,6 +245,14 @@ int CKernelWifi::process_messages(struct nl_msg *msg)
 	{
 		radio_info.tx_power = dev.getTxPower() / 100; // must add the remainder if not multiple of 2
 	}
+
+	std::cerr
+    << "radio_info:"
+    << " radio_id=" << radio_info.radio_id
+    << " frequency=" << radio_info.frequency
+    << " channel_width=" << radio_info.channel_width
+    << " tx_power=" << radio_info.tx_power
+    << std::endl;
 
 	int value=_SendSignal(&radio_info, reinterpret_cast<char*>(nlh), msg_len);
 	if( value == SOCKET_ERROR )
