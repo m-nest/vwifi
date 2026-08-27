@@ -323,7 +323,7 @@ void MonitorWirelessDevice::new_net_interface(struct nlmsghdr *h)
 
 	std::string inet_name(name);
 
-	WirelessDevice inetdevice (inet_name,ifi->ifi_index,ifi->ifi_type,macaddr,0);
+	WirelessDevice inetdevice (inet_name,ifi->ifi_index,ifi->ifi_type,macaddr,0,WirelessDevice::INVALID_WIPHY);
 
 	if(inetdevice.checkif_wireless_device()){
 
@@ -386,7 +386,7 @@ void MonitorWirelessDevice::del_net_interface(struct nlmsghdr *h)
 
 		std::string inet_name(name);
 
-		WirelessDevice inetdevice (inet_name,ifi->ifi_index,ifi->ifi_type,macaddr,0);
+		WirelessDevice inetdevice (inet_name,ifi->ifi_index,ifi->ifi_type,macaddr,0,WirelessDevice::INVALID_WIPHY);
 
 		if(inetdevice.checkif_wireless_device()){
 
@@ -541,6 +541,7 @@ int MonitorWirelessDevice::recv_winterface_infos(struct nl_msg *msg){
 	int iftype;
 	struct ether_addr macaddr ;
 	uint32_t txp = 0;
+	uint32_t wiphy = 0;
 
 	nla_parse(tb_msg, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),genlmsg_attrlen(gnlh, 0), NULL);
 
@@ -558,18 +559,9 @@ int MonitorWirelessDevice::recv_winterface_infos(struct nl_msg *msg){
 		return NL_SKIP;
 
 	if (tb_msg[NL80211_ATTR_WIPHY])
-	{
-    	uint32_t wiphy = nla_get_u32(tb_msg[NL80211_ATTR_WIPHY]);
-
-    	std::cerr << "Interface " << ifname
-        	      << " belongs to wiphy " << wiphy
-            	  << std::endl;
-	}
+    	wiphy = nla_get_u32(tb_msg[NL80211_ATTR_WIPHY]);
 	else
-	{
-    	std::cerr << "No NL80211_ATTR_WIPHY for "
-        	      << ifname << std::endl;
-	}
+    	return NL_SKIP;
 
 	if (tb_msg[NL80211_ATTR_MAC])
 
@@ -592,7 +584,7 @@ int MonitorWirelessDevice::recv_winterface_infos(struct nl_msg *msg){
 
 	std::string inet_name(ifname);
 
-	WirelessDevice inetdevice (inet_name,ifindex,iftype,macaddr,txp);
+	WirelessDevice inetdevice (inet_name,ifindex,iftype,macaddr,txp,wiphy);
 
 	if(!init_interfaces){
 

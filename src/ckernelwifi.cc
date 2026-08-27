@@ -240,6 +240,7 @@ int CKernelWifi::process_messages(struct nl_msg *msg)
 	WirelessDevice  dev ;
 	if ( _list_winterfaces.get_device_by_mac(dev,framesrc))
 	{
+		radio_info.radio_id = dev.getWiphyId();
 		radio_info.tx_power = dev.getTxPower() / 100; // must add the remainder if not multiple of 2
 	}
 
