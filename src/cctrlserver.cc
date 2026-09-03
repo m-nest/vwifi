@@ -1,5 +1,7 @@
 #include <cstring> // strcpy
 
+#include <net/ethernet.h> // ETH_ALEN
+
 #include "cctrlserver.h"
 #include "config.h" // MAX_SIZE_NAME
 
@@ -241,6 +243,25 @@ void CCTRLServer::ChangePacketLoss()
 	}
 }
 
+void CCTRLServer::SetLinkState()
+{
+	TByte mac[ETH_ALEN];
+
+	if( Read(reinterpret_cast<char*>(mac), sizeof(mac)) == SOCKET_ERROR )
+		return;
+
+	int up;
+
+	if( Read(reinterpret_cast<char*>(&up), sizeof(up)) == SOCKET_ERROR )
+		return;
+
+	// Spies are not on the air, so only real clients can have their link cut.
+	int codeError = WifiServerITCP->SetLinkStateByMac(VwifiMacToString(mac), up != 0) ? 0 : -1;
+
+	if( Send(reinterpret_cast<char*>(&codeError),sizeof(codeError)) == SOCKET_ERROR )
+		cerr<<"Error : SetLinkState : Send : code"<<endl;
+}
+
 void CCTRLServer::SendStatus()
 {
 	if( Send(reinterpret_cast<char*>(&CanLostPackets),sizeof(CanLostPackets)) == SOCKET_ERROR )
@@ -428,6 +449,10 @@ void CCTRLServer::ReceiveOrder()
 
 			case TORDER_PACKET_LOSS :
 				ChangePacketLoss();
+				break;
+
+			case TORDER_LINK :
+				SetLinkState();
 				break;
 
 			case TORDER_STATUS :

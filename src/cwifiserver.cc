@@ -3,6 +3,8 @@
 #include <cstring> // memcpy
 #include <assert.h> // assert
 
+#include <netlink/netlink.h> // struct nlmsghdr
+
 #include <arpa/inet.h> // struct sockaddr_in
 #include <sys/socket.h> // AF_VSOCK / AF_INET
 #include <linux/vm_sockets.h> // struct sockaddr_vm
@@ -198,7 +200,7 @@ void CWifiServer::SendAllOtherClients(TIndex index, VwifiRadioInfo* radio_info, 
 
     for (TIndex i = 0; i < GetNumberClient(); i++)
     {
-        if (i != index && IsEnable(i))
+        if (i != index && IsEnable(i) && ClientLinkIsUp(i))
         {
             VwifiRadioInfo destination_info = *radio_info;
 
@@ -221,7 +223,7 @@ void CWifiServer::SendAllOtherClientsWithoutLoss(TIndex index, VwifiRadioInfo* r
 {
 	for (TIndex i = 0; i < GetNumberClient(); i++)
 	{
-		if( i != index && IsEnable(i) )
+		if( i != index && IsEnable(i) && ClientLinkIsUp(i) )
 			if( SendSignal((*InfoSockets)[i].GetDescriptor(), radio_info, data, sizeOfData) < 0 )
 				(*InfoSockets)[i].DisableIt();
 	}
@@ -230,9 +232,56 @@ void CWifiServer::SendAllOtherClientsWithoutLoss(TIndex index, VwifiRadioInfo* r
 void CWifiServer::SendAllClientsWithoutLoss(VwifiRadioInfo* radio_info, const char* data, ssize_t sizeOfData)
 {
 	for (TIndex i = 0; i < GetNumberClient(); i++)
-		if( IsEnable(i) )
+		if( IsEnable(i) && ClientLinkIsUp(i) )
 			if( SendSignal((*InfoSockets)[i].GetDescriptor(), radio_info, data, sizeOfData) < 0 )
 				(*InfoSockets)[i].DisableIt();
+}
+
+bool CWifiServer::ClientLinkIsUp(TIndex index) const
+{
+	if( index >= GetNumberClient() )
+		return false;
+
+	return (*InfoWifis)[index].IsLinkUp();
+}
+
+void CWifiServer::LearnTransmitter(TIndex index, char* data, ssize_t sizeOfData)
+{
+	if( index >= GetNumberClient() )
+		return;
+
+	if( sizeOfData < static_cast<ssize_t>(sizeof(struct nlmsghdr)) )
+		return;
+
+	string mac=GetTransmitter(reinterpret_cast<struct nlmsghdr*>(data));
+	if( mac.empty() )
+		return;
+
+	(*InfoWifis)[index].LearnMac(mac);
+}
+
+bool CWifiServer::SetLinkStateByMac(const string& mac, bool up)
+{
+	for (TIndex i = 0; i < GetNumberClient(); i++)
+	{
+		if( ! IsEnable(i) || ! (*InfoWifis)[i].OwnsMac(mac) )
+			continue;
+
+		(*InfoWifis)[i].SetLinkUp(up);
+
+		// Telling the client is the half that matters. Refusing to relay only
+		// empties the medium; the station keeps believing it is associated
+		// because its own vwifi-client answers every frame it sends with a
+		// fabricated HWSIM_TX_STAT_ACK, which resets mac80211's connection
+		// monitor. Cutting that off is what lets a beacon loss be noticed.
+		SendLinkStateWithSocket(this, (*InfoSockets)[i].GetDescriptor(), up);
+
+		cout<<"RF link "<<( up ? "up" : "down" )<<" : "; ShowInfoWifi(i); cout<<endl;
+
+		return true;
+	}
+
+	return false;
 }
 
 CInfoWifi* CWifiServer::GetReferenceOnInfoWifiByCID(TCID cid) const

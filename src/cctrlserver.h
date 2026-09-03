@@ -34,6 +34,8 @@ class CCTRLServer : public CSocketServer, public CSocketServerFunctionITCP
 
 		void ChangePacketLoss();
 
+		void SetLinkState();
+
 		void SendStatus();
 
 		void SendShow();

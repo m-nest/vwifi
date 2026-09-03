@@ -6,11 +6,13 @@
 CInfoWifi::CInfoWifi(): CCoordinate()
 {
 	SetCid(0);
+	LinkUp=true;
 }
 
 CInfoWifi::CInfoWifi(TCID cid, CCoordinate coo) : CCoordinate(coo)
 {
 	SetCid(cid);
+	LinkUp=true;
 }
 
 void CInfoWifi::SetCid(TCID cid)
@@ -48,11 +50,33 @@ bool CInfoWifi::HasName() const
 	return ! Name.empty();
 }
 
+void CInfoWifi::LearnMac(const string& mac)
+{
+	Macs.insert(mac);
+}
+
+bool CInfoWifi::OwnsMac(const string& mac) const
+{
+	return Macs.find(mac) != Macs.end();
+}
+
+void CInfoWifi::SetLinkUp(bool up)
+{
+	LinkUp=up;
+}
+
+bool CInfoWifi::IsLinkUp() const
+{
+	return LinkUp;
+}
+
 void CInfoWifi::Display(ostream& os) const
 {
 	os << Cid << " ";
 	if( HasName() )
 		os << "("<<Name<<") ";
+	if( ! LinkUp )
+		os << "[RF down] ";
 	CCoordinate::Display(os);
 }
 

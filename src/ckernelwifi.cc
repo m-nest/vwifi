@@ -30,6 +30,7 @@
 #include <csignal>
 
 #include "csocket.h"
+#include "cwifi.h" // VwifiReadLinkState
 
 CDynBuffer Buffer;
 
@@ -166,7 +167,18 @@ int CKernelWifi::process_messages(struct nl_msg *msg)
 	/* Let's flag this frame as ACK'ed */
 	/* whatever that means... */
 	unsigned int flags = nla_get_u32(attrs[HWSIM_ATTR_FLAGS]);
-	flags |= HWSIM_TX_STAT_ACK;
+
+	/*
+	 * A radio only reports an ACK when the peer actually sent one. Claiming
+	 * one unconditionally is what makes a station immortal here: when its
+	 * beacon monitor fires and it probes the silent AP with a nullfunc, the
+	 * probe comes back acknowledged from inside this process, mac80211 calls
+	 * ieee80211_sta_reset_conn_monitor(), and the station never disconnects
+	 * however dead the medium is. While the server holds the link down, report
+	 * the transmission for what it is : unacknowledged.
+	 */
+	if ( _fake_ack )
+		flags |= HWSIM_TX_STAT_ACK;
 
 	/* this is the signal sent to the sender, not the receiver */
 	int signal = -10;
@@ -517,8 +529,18 @@ void CKernelWifi::recv_from_server(){
 
 	VwifiRadioInfo radio_info{};
 
-	if (_RecvSignal(&radio_info, &Buffer) == SOCKET_ERROR){
+	ssize_t valread = _RecvSignal(&radio_info, &Buffer);
+	if (valread == SOCKET_ERROR){
     	manage_server_crash();
+		return;
+	}
+
+	/* the server sends this in place of a frame to cut or restore our link */
+	bool link_up;
+	if ( VwifiReadLinkState(Buffer.GetBuffer(), valread, link_up) )
+	{
+		_fake_ack = link_up;
+		std::cout << "RF link " << ( link_up ? "up" : "down" ) << std::endl;
 		return;
 	}
 

@@ -66,9 +66,17 @@ void ForwardData(bool srcIsSpy, CWifiServer* src, CWifiServer* otherDst)
 
             if (!srcIsSpy)
             {
-                src->SendAllOtherClients(i, &radio_info, Buffer.GetBuffer(), valread);
+                // Keep learning even while the link is cut : the client goes on
+                // transmitting, and the address is what "vwifi-ctrl link" needs
+                // to find it again to restore it.
+                src->LearnTransmitter(i, Buffer.GetBuffer(), valread);
 
-                otherDst->SendAllClientsWithoutLoss(&radio_info, Buffer.GetBuffer(), valread);
+                if (src->ClientLinkIsUp(i))
+                {
+                    src->SendAllOtherClients(i, &radio_info, Buffer.GetBuffer(), valread);
+
+                    otherDst->SendAllClientsWithoutLoss(&radio_info, Buffer.GetBuffer(), valread);
+                }
             }
             else
             {

@@ -2,6 +2,7 @@
 #define _CINFOWIFI_H_
 
 #include <iostream> // ostream
+#include <set>
 #include <string>
 
 #include "ccoordinate.h"
@@ -16,6 +17,15 @@ class CInfoWifi : public CCoordinate
 		TCID Cid;
 		string Name;
 
+		// A frame carries its transmitter's hwsim address and nothing else
+		// identifying the client, so this is how a client becomes addressable
+		// by MAC. One client can own several radios, hence a set.
+		set<string> Macs;
+
+		// false : the client is still connected and still transmitting, but
+		// nothing it sends is relayed and nothing reaches it
+		bool LinkUp;
+
 	public :
 
 		CInfoWifi();
@@ -29,6 +39,12 @@ class CInfoWifi : public CCoordinate
 		string GetName() const;
 		int GetSizeName() const;
 		bool HasName() const;
+
+		void LearnMac(const string& mac);
+		bool OwnsMac(const string& mac) const;
+
+		void SetLinkUp(bool up);
+		bool IsLinkUp() const;
 
 		void Display(ostream& os) const;
 

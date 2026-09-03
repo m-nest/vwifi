@@ -3,8 +3,12 @@
 
 #include <string.h> //strlen
 
+#include <net/ethernet.h> // ETH_ALEN
+
 #include "config.h"
 #include "tools.h" // isInt isPositiveInt isIntOrFloat
+#include "addinterfaces.h" // ParseAddress
+#include "cwifi.h" // VwifiMacToString
 #include "csocketclientitcp.h"
 #include "types.h"
 #include "ccoordinate.h" // CCoordinate
@@ -30,6 +34,12 @@ void Help()
 	cout<<"	loss yes/no"<<endl;
 	cout<<"		- loss yes : packets can be lost"<<endl;
 	cout<<"		- loss no : no packets can be lost"<<endl;
+	cout<<"	link MAC up/down"<<endl;
+	cout<<"		- link MAC down : cut the RF link of the Client transmitting from MAC :"<<endl;
+	cout<<"		                  nothing it sends is relayed, nothing reaches it, and it"<<endl;
+	cout<<"		                  stops acknowledging its own frames, so a station behind"<<endl;
+	cout<<"		                  it loses its beacons and de-associates"<<endl;
+	cout<<"		- link MAC up : put it back on the air"<<endl;
 	cout<<"	show"<<endl;
 	cout<<"		- Display the status of loss and list of Clients"<<endl;
 	cout<<"	status"<<endl;
@@ -382,6 +392,88 @@ int ChangePacketLoss(int argc, char *argv[])
 	}
 
 	socket.Close();
+
+	return 0;
+}
+
+int SetLinkState(int argc, char *argv[])
+{
+	if( argc != 3 )
+	{
+			cerr<<"Error : link : the number of parameter is uncorrect"<<endl;
+			Help();
+			return 1;
+	}
+
+	TByte mac[ETH_ALEN];
+	if( ParseAddress(argv[1],mac) != ETH_ALEN )
+	{
+			cerr<<"Error : link : \""<<argv[1]<<"\" is not a MAC address"<<endl;
+			return 1;
+	}
+
+	int up;
+	if ( ! strcasecmp(argv[2],"up") )
+		up=1;
+	else if ( ! strcasecmp(argv[2],"down") )
+		up=0;
+	else
+	{
+			cerr<<"Error : link : the state can only be \"up\" or \"down\""<<endl;
+			return 1;
+	}
+
+	CSocketClientITCP socket;
+
+	socket.Init(IP_Ctrl.c_str(),Port_Ctrl);
+
+	if( ! socket.ConnectLoop() )
+	{
+		cerr<<"Error : link : socket.Connect error"<<endl;
+		return 1;
+	}
+
+	int err;
+
+	TOrder order=TORDER_LINK;
+	err=socket.Send(reinterpret_cast<char*>(&order),sizeof(order));
+	if( err == SOCKET_ERROR )
+	{
+		cerr<<"Error : link : socket.Send : order"<<endl;
+		return 1;
+	}
+	err=socket.Send(reinterpret_cast<char*>(mac),sizeof(mac));
+	if( err == SOCKET_ERROR )
+	{
+		cerr<<"Error : link : socket.Send : MAC"<<endl;
+		return 1;
+	}
+	err=socket.Send(reinterpret_cast<char*>(&up),sizeof(up));
+	if( err == SOCKET_ERROR )
+	{
+		cerr<<"Error : link : socket.Send : state"<<endl;
+		return 1;
+	}
+
+	int codeError;
+	err=socket.Read(reinterpret_cast<char*>(&codeError),sizeof(codeError));
+	if( err == SOCKET_ERROR )
+	{
+		cerr<<"Error : link : socket.Read : code"<<endl;
+		return 1;
+	}
+
+	socket.Close();
+
+	// A client is only addressable once the server has seen it transmit : the
+	// address comes from the frames themselves, nothing else carries it.
+	if( codeError )
+	{
+		cerr<<"Error : link : no connected Client has transmitted from "<<VwifiMacToString(mac)<<endl;
+		return 1;
+	}
+
+	cout<<VwifiMacToString(mac)<<" : RF link "<<( up ? "up" : "down" )<<endl;
 
 	return 0;
 }
@@ -785,6 +877,9 @@ int main(int argc , char *argv[])
 
 	if( ! strcasecmp(param_cmd[0],"loss") )
 		return ChangePacketLoss(nbr_param_cmd, param_cmd.get());
+
+	if( ! strcasecmp(param_cmd[0],"link") )
+		return SetLinkState(nbr_param_cmd, param_cmd.get());
 
 	if( ! strcasecmp(param_cmd[0],"show") )
 		return AskShow();

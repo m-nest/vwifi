@@ -1,6 +1,7 @@
 #ifndef _CKERNELWIFI_H_
 #define _CKERNELWIFI_H_
 
+#include <atomic>
 #include <string>
 #include <mutex>
 
@@ -56,6 +57,11 @@ class CKernelWifi : public intthread::AsyncTask {
 
 		bool _initialized { false } ;
 		std::mutex _mutex_initialized ;
+
+		// false : the server has cut this node's RF link, so stop reporting
+		// transmissions as acknowledged. Written by the server loop, read by
+		// the hwsim loop.
+		std::atomic<bool> _fake_ack { true } ;
 
 		MonitorWirelessDevice * monwireless = nullptr ;
 

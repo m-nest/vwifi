@@ -50,6 +50,16 @@ class CWifiServer : public CSocketServer, public CWifi
 
 		void SendAllOtherClients(TIndex index, VwifiRadioInfo* radio_info, const char* data, ssize_t sizeOfData);
 
+		bool ClientLinkIsUp(TIndex index) const;
+
+		// Records the address a client transmits from, so that it can later be
+		// named by MAC from vwifi-ctrl.
+		void LearnTransmitter(TIndex index, char* data, ssize_t sizeOfData);
+
+		// Cuts or restores the RF link of the client transmitting from mac.
+		// Returns false when no connected client has ever transmitted from it.
+		bool SetLinkStateByMac(const string& mac, bool up);
+
 		void SendAllOtherClientsWithoutLoss(TIndex index, VwifiRadioInfo* radio_info, const char* data, ssize_t sizeOfData);
 
 		void SendAllClientsWithoutLoss(VwifiRadioInfo* radio_info, const char* data, ssize_t sizeOfData);
