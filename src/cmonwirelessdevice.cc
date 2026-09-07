@@ -542,6 +542,8 @@ int MonitorWirelessDevice::recv_winterface_infos(struct nl_msg *msg){
 	struct ether_addr macaddr ;
 	uint32_t txp = 0;
 	uint32_t wiphy = 0;
+	uint32_t freq = 0;
+	uint32_t width = 20;
 
 	nla_parse(tb_msg, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),genlmsg_attrlen(gnlh, 0), NULL);
 
@@ -582,9 +584,28 @@ int MonitorWirelessDevice::recv_winterface_infos(struct nl_msg *msg){
 
 	}
 
+	// The channel this interface is on. Absent for an interface with no active
+	// channel -- one that is down, or a station that has not associated -- and
+	// left at 0 in that case, which is what the server reads as "unknown".
+	if (tb_msg[NL80211_ATTR_WIPHY_FREQ])
+		freq = nla_get_u32(tb_msg[NL80211_ATTR_WIPHY_FREQ]);
+
+	if (tb_msg[NL80211_ATTR_CHANNEL_WIDTH]) {
+
+		switch (nla_get_u32(tb_msg[NL80211_ATTR_CHANNEL_WIDTH])) {
+
+			case NL80211_CHAN_WIDTH_40:    width = 40;  break;
+			case NL80211_CHAN_WIDTH_80:    width = 80;  break;
+			case NL80211_CHAN_WIDTH_80P80:
+			case NL80211_CHAN_WIDTH_160:   width = 160; break;
+			default:                       width = 20;  break;
+		}
+	}
+
 	std::string inet_name(ifname);
 
 	WirelessDevice inetdevice (inet_name,ifindex,iftype,macaddr,txp,wiphy);
+	inetdevice.setChannel(freq,width);
 
 	if(!init_interfaces){
 

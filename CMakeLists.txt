@@ -69,6 +69,7 @@ include_directories(${LIBNL3_INCLUDE_DIRS})
 # List all .cc files EXCEPT the main files for the executables
 set(COMMON_SOURCES
     src/ccoordinate.cc
+    src/crf.cc
     src/cctrlserver.cc
     src/cdynbuffer.cc
     src/cinfosocket.cc
@@ -126,9 +127,13 @@ install(TARGETS vwifi-server vwifi-client vwifi-ctrl vwifi-add-interfaces
 # Optional: Install man pages if needed (requires CMake code)
 # install(FILES man/vwifi.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1 RENAME vwifi.1)
 
-# --- Optional: Add tests ---
-# enable_testing()
-# add_subdirectory(tests) # If tests have their own CMakeLists.txt
+# --- Tests ---
+# The RF model is pure -- no sockets, no netlink -- so it can be exercised
+# directly. Everything else in here needs a medium to be meaningful.
+enable_testing()
+add_executable(test-rf tests/test_rf.cc)
+target_link_libraries(test-rf PRIVATE vwifi_common)
+add_test(NAME rf-model COMMAND test-rf)
 
 # --- Custom Target for Cppcheck ---
 find_program(CPPCHECK_EXECUTABLE cppcheck)

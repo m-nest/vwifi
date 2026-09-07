@@ -36,6 +36,18 @@ class CCTRLServer : public CSocketServer, public CSocketServerFunctionITCP
 
 		void SetLinkState();
 
+		void SetHousehold();
+
+		void SetWall();
+
+		void SetNoiseFloor();
+
+		void SetBeaconState();
+
+		void SetAckState();
+
+		void SendRadios();
+
 		void SendStatus();
 
 		void SendShow();

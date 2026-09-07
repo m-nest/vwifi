@@ -110,3 +110,18 @@ std::ostream &   operator<< ( std::ostream & os , const WirelessDevice & wdevice
 	return os ;
 }
 
+uint32_t WirelessDevice::getFrequency() const
+{
+	return _frequency ;
+}
+
+uint32_t WirelessDevice::getChannelWidth() const
+{
+	return _channel_width ;
+}
+
+void WirelessDevice::setChannel(uint32_t frequency, uint32_t width)
+{
+	_frequency = frequency ;
+	_channel_width = ( width ? width : 20 ) ;
+}

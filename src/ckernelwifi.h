@@ -65,6 +65,16 @@ class CKernelWifi : public intthread::AsyncTask {
 
 		MonitorWirelessDevice * monwireless = nullptr ;
 
+		// Serialises writes to the data socket.
+		//
+		// A signal is two writes -- the metadata, then the payload -- so two
+		// threads sending at once can interleave the halves and leave the
+		// server reading one message's bytes as another's header, permanently.
+		// Until the radio-state report existed only the hwsim loop ever sent
+		// and there was nothing to serialise against; now the interface update
+		// loop sends too.
+		std::mutex _send_mutex ;
+
 		int init();
 		int init_first();
 
@@ -185,6 +195,16 @@ class CKernelWifi : public intthread::AsyncTask {
 		void  monitor_hwsim_loop();
 
 		void winet_update_loop();
+
+		// Every _SendSignal in the process goes through here.
+		ssize_t send_to_server(VwifiRadioInfo* radio_info, const char* buffer, int sizeOfBuffer);
+
+		// Describe this node's radios to the server : what channel each one is
+		// on, how wide, and at what power. The server cannot work any of that
+		// out on its own -- a frame tells it about the radio that sent it, and
+		// says nothing about the radios that might receive it -- and a radio
+		// that is only listening never sends a frame at all.
+		void send_radio_state();
 
 		/**
 		*      \brief Send a cloned frame to the kernel space driver.

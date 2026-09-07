@@ -9,6 +9,9 @@
 #include <sys/socket.h> // AF_VSOCK / AF_INET
 #include <linux/vm_sockets.h> // struct sockaddr_vm
 
+#include <map>
+
+#include "crf.h"
 #include "cwifiserver.h"
 #include "tools.h"
 #include "config.h" // LOST_PACKET_BY_DEFAULT
@@ -16,6 +19,63 @@
 bool CanLostPackets=LOST_PACKET_BY_DEFAULT;
 
 using namespace std;
+
+// ---------------------------------------------------------------------------
+// Walls
+// ---------------------------------------------------------------------------
+
+// 0 dB by default, which is the medium every existing scenario already runs
+// against : one room, everybody hearing everybody. A household only starts
+// costing anything once somebody sets a wall.
+static int DefaultWallAttenuation=0;
+
+// Keyed with the lower household first, so one entry serves both directions --
+// a wall is not one-way.
+static map< pair<u32,u32>, int > WallAttenuations;
+
+static pair<u32,u32> WallKey(u32 householdA, u32 householdB)
+{
+	if( householdA <= householdB )
+		return make_pair(householdA,householdB);
+
+	return make_pair(householdB,householdA);
+}
+
+void SetDefaultWallAttenuation(int dB)
+{
+	DefaultWallAttenuation=dB;
+}
+
+int GetDefaultWallAttenuation()
+{
+	return DefaultWallAttenuation;
+}
+
+void SetWallAttenuation(u32 householdA, u32 householdB, int dB)
+{
+	if( householdA == householdB )
+		return;
+
+	WallAttenuations[WallKey(householdA,householdB)]=dB;
+}
+
+int WallAttenuationBetween(u32 householdA, u32 householdB)
+{
+	if( householdA == householdB )
+		return 0;
+
+	map< pair<u32,u32>, int >::const_iterator it=WallAttenuations.find(WallKey(householdA,householdB));
+	if( it != WallAttenuations.end() )
+		return it->second;
+
+	return DefaultWallAttenuation;
+}
+
+void ResetWalls()
+{
+	WallAttenuations.clear();
+	DefaultWallAttenuation=0;
+}
 
 CWifiServer::CWifiServer() : CSocketServer ()
 {
@@ -92,14 +152,13 @@ bool CWifiServer::Listen(TIndex maxClientDeconnected)
 	return true;
 }
 
-bool CWifiServer::RecoverInfosOfInfoWifiDeconnected(TCID cid, CCoordinate& coo, string& name)
+bool CWifiServer::RecoverInfosOfInfoWifiDeconnected(TCID cid, CInfoWifi& recovered)
 {
 	for (auto infoWifiDeconnected = InfoWifisDeconnected->begin(); infoWifiDeconnected != InfoWifisDeconnected->end(); ++infoWifiDeconnected)
 	{
 		if ( infoWifiDeconnected->GetCid() == cid )
 		{
-			coo=*infoWifiDeconnected;
-			name=infoWifiDeconnected->GetName();
+			recovered=*infoWifiDeconnected;
 
 			InfoWifisDeconnected->erase(infoWifiDeconnected);
 
@@ -110,7 +169,7 @@ bool CWifiServer::RecoverInfosOfInfoWifiDeconnected(TCID cid, CCoordinate& coo, 
 	return false;
 }
 
-bool CWifiServer::RecoverInfosOfInfoWifi(TCID cid, CCoordinate& coo, string& name)
+bool CWifiServer::RecoverInfosOfInfoWifi(TCID cid, CInfoWifi& recovered)
 {
 	int index=0;
 	for (auto& infoWifi : *InfoWifis)
@@ -118,8 +177,7 @@ bool CWifiServer::RecoverInfosOfInfoWifi(TCID cid, CCoordinate& coo, string& nam
 		if( IsEnable(index) )
 			if( infoWifi.GetCid() == cid )
 			{
-				coo=infoWifi;
-				name=infoWifi.GetName();
+				recovered=infoWifi;
 
 				DisableClient(index);
 
@@ -141,12 +199,23 @@ TDescriptor CWifiServer::Accept()
 
 	CInfoWifi infoWifi;
 
-	CCoordinate coo;
-	string name;
-	if( RecoverInfosOfInfoWifiDeconnected(cid,coo,name) || RecoverInfosOfInfoWifi(cid, coo,name) )
+	if( RecoverInfosOfInfoWifiDeconnected(cid,infoWifi) || RecoverInfosOfInfoWifi(cid,infoWifi) )
 	{
-		infoWifi.Set(coo);
-		infoWifi.SetName(name);
+		// Everything the server can hold on its own comes back : where the node
+		// is, what it is called, which household it is in, the walls that
+		// implies, its noise floors, the addresses it is known by and the
+		// airtime its radios have accumulated. None of that needs the client to
+		// agree, and a client that has merely reconnected has not moved house.
+		//
+		// The link state deliberately does not come back. It is the one piece
+		// of state that lives on both sides -- cutting a link stops the relay
+		// here and stops the fabricated acknowledgement over there -- and a
+		// reconnected client is a new process that starts out acknowledging
+		// itself and has been told nothing. Restoring only the server half
+		// would leave a node the server refuses to relay for while it believes
+		// its own transmissions are landing, which is worse than either state.
+		// A link cut is re-applied by whoever cut it, or it is over.
+		infoWifi.SetLinkUp(true);
 	}
 
 	infoWifi.SetCid(cid);
@@ -196,27 +265,169 @@ ssize_t CWifiServer::RecvSignal(TDescriptor descriptor, VwifiRadioInfo* radio_in
 
 void CWifiServer::SendAllOtherClients(TIndex index, VwifiRadioInfo* radio_info, const char* data, ssize_t sizeOfData)
 {
-    CCoordinate coo = (*InfoWifis)[index];
+    CInfoWifi& source = (*InfoWifis)[index];
+    CCoordinate coo = source;
+
+    // What the transmitter is tuned to. This has always been on the wire with
+    // every frame; what was missing was any idea of what the receivers were on.
+    CChannel txChannel(radio_info->frequency, radio_info->channel_width);
+
+    // The 802.11 frame inside the netlink envelope. Its length is what the
+    // medium is occupied for, and its first byte is what says whether it is a
+    // beacon. A message carrying no frame is not a transmission -- it costs no
+    // airtime and cannot be a beacon -- but it is still relayed, because the
+    // client's own dispatcher is what decides what to do with it.
+    const char* frame = NULL;
+    u32 sizeOfFrame = 0;
+    bool hasFrame = GetFrameBody(reinterpret_cast<struct nlmsghdr*>(const_cast<char*>(data)),
+                                 frame, sizeOfFrame);
+
+    // Beacons and probe responses together : see FrameIsBssPresence().
+    bool isPresence = hasFrame && FrameIsBssPresence(frame, sizeOfFrame);
+    bool isRobust = hasFrame && FrameIsManagement(frame, sizeOfFrame);
+
+    u32 airtimeUs = hasFrame ? FrameAirtimeUs(sizeOfFrame, txChannel) : 0;
+
+    // Only these need their transmitter resolved, and they are a handful of
+    // frames a second per BSS -- so the parse is paid where it is cheap rather
+    // than on every data frame that goes past.
+    string transmitter;
+    if (isPresence)
+        transmitter = GetTransmitter(reinterpret_cast<struct nlmsghdr*>(const_cast<char*>(data)));
+
+    if (airtimeUs)
+        source.AccountOwnTransmission(*radio_info, airtimeUs);
 
     for (TIndex i = 0; i < GetNumberClient(); i++)
     {
-        if (i != index && IsEnable(i) && ClientLinkIsUp(i))
-        {
-            VwifiRadioInfo destination_info = *radio_info;
+        if (i == index || !IsEnable(i) || !ClientLinkIsUp(i))
+            continue;
 
-            destination_info.tx_power = BoundedPower(
-                    destination_info.tx_power - Attenuation(
-                        coo.DistanceWith((*InfoWifis)[i]), destination_info.frequency));
+        CInfoWifi& destination = (*InfoWifis)[i];
+        bool sameHousehold = (destination.GetHousehold() == source.GetHousehold());
 
-            if (!CanLostPackets || !PacketIsLost(destination_info.tx_power))
-            {
-                if (SendSignal((*InfoSockets)[i].GetDescriptor(), &destination_info, data, sizeOfData) < 0)
-                {
-                    (*InfoSockets)[i].DisableIt();
-                }
-            }
-        }
+        // Airtime first, and unconditionally. Every radio whose passband this
+        // transmission touches loses that time whether or not it could decode
+        // the frame, whether or not it is even the same household -- that is
+        // what interference is, and accounting it only on delivery would make
+        // a neighbouring household look free.
+        if (airtimeUs)
+            destination.AccumulateAirtime(txChannel, airtimeUs, sameHousehold);
+
+        // hwsim drops a frame whose centre frequency does not match before it
+        // looks at any signal metadata, so relaying across channels only hands
+        // the far end something to discard.
+        if (!destination.CanReceiveOn(txChannel))
+            continue;
+
+        if (isPresence && !source.AreBeaconsRelayed(transmitter))
+            continue;
+
+        VwifiRadioInfo destination_info = *radio_info;
+
+        destination_info.tx_power = BoundedPower(
+                destination_info.tx_power
+                - Attenuation(coo.DistanceWith(destination), destination_info.frequency)
+                - WallAttenuationBetween(source.GetHousehold(), destination.GetHousehold()));
+
+        if (CanLostPackets
+            && PacketIsLost(destination_info.tx_power,
+                            destination.NoiseFloorOn(txChannel),
+                            txChannel.Width,
+                            isRobust))
+            continue;
+
+        if (SendSignal((*InfoSockets)[i].GetDescriptor(), &destination_info, data, sizeOfData) < 0)
+            (*InfoSockets)[i].DisableIt();
     }
+}
+
+bool CWifiServer::LearnRadioState(TIndex index, const char* data, ssize_t sizeOfData)
+{
+	if( index >= GetNumberClient() )
+		return false;
+
+	VwifiRadioEntry radios[VWIFI_MAX_RADIOS_PER_CLIENT];
+	u32 numberOfRadios=0;
+
+	if( ! VwifiReadRadioState(data,sizeOfData,radios,numberOfRadios) )
+		return false;
+
+	for(u32 r=0; r<numberOfRadios; r++)
+		(*InfoWifis)[index].ReportRadio(radios[r]);
+
+	return true;
+}
+
+bool CWifiServer::SetHouseholdByMac(const string& mac, u32 household)
+{
+	for (TIndex i = 0; i < GetNumberClient(); i++)
+	{
+		if( ! IsEnable(i) || ! (*InfoWifis)[i].OwnsMac(mac) )
+			continue;
+
+		(*InfoWifis)[i].SetHousehold(household);
+		cout<<"household "<<household<<" : "; ShowInfoWifi(i); cout<<endl;
+		return true;
+	}
+
+	return false;
+}
+
+bool CWifiServer::SetBeaconsRelayedByMac(const string& mac, bool relayed)
+{
+	for (TIndex i = 0; i < GetNumberClient(); i++)
+	{
+		if( ! IsEnable(i) || ! (*InfoWifis)[i].OwnsMac(mac) )
+			continue;
+
+		(*InfoWifis)[i].SetBeaconsRelayed(mac,relayed);
+
+		// Unlike a link cut, nothing is told to the client. The point of a
+		// beacon blackhole is that the transmitter goes on believing it is
+		// beaconing normally -- and it is, into a medium that swallows them.
+		cout<<"beacons "<<( relayed ? "relayed" : "swallowed" )<<" : "; ShowInfoWifi(i); cout<<endl;
+		return true;
+	}
+
+	return false;
+}
+
+bool CWifiServer::SetAckFakingByMac(const string& mac, bool faking)
+{
+	for (TIndex i = 0; i < GetNumberClient(); i++)
+	{
+		if( ! IsEnable(i) || ! (*InfoWifis)[i].OwnsMac(mac) )
+			continue;
+
+		// Nothing is recorded here : this is entirely a fact about the client,
+		// and the client is the only thing that acts on it. Note that a later
+		// "link up" or "link down" writes the same flag on the far side, so the
+		// last of the two commands is the one in force.
+		SendAckStateWithSocket(this, (*InfoSockets)[i].GetDescriptor(), faking);
+
+		cout<<"fake ack "<<( faking ? "on" : "off" )<<" : "; ShowInfoWifi(i); cout<<endl;
+
+		return true;
+	}
+
+	return false;
+}
+
+bool CWifiServer::SetNoiseFloorByMac(const string& mac, u32 radioId, int noiseFloorDbm)
+{
+	for (TIndex i = 0; i < GetNumberClient(); i++)
+	{
+		if( ! IsEnable(i) || ! (*InfoWifis)[i].OwnsMac(mac) )
+			continue;
+
+		// A node that has not reported a radio yet has nothing to set the floor
+		// on. Report that as a failure rather than silently accepting a value
+		// that will be dropped by the next report.
+		return ( (*InfoWifis)[i].SetNoiseFloor(radioId,noiseFloorDbm) > 0 );
+	}
+
+	return false;
 }
 
 void CWifiServer::SendAllOtherClientsWithoutLoss(TIndex index, VwifiRadioInfo* radio_info, const char* data, ssize_t sizeOfData)

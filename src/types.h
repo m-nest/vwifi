@@ -19,7 +19,8 @@ typedef u32 TCID;
 // appended to, never reordered : the value goes on the wire between
 // vwifi-ctrl and vwifi-server
 enum TOrder {
-	TORDER_NO, TORDER_LIST, TORDER_SHOW, TORDER_CHANGE_COORDINATE, TORDER_SETNAME, TORDER_PACKET_LOSS, TORDER_STATUS, TORDER_DISTANCE_BETWEEN_CID, TORDER_SET_SCALE, TORDER_CLOSE_ALL_CLIENT, TORDER_LINK
+	TORDER_NO, TORDER_LIST, TORDER_SHOW, TORDER_CHANGE_COORDINATE, TORDER_SETNAME, TORDER_PACKET_LOSS, TORDER_STATUS, TORDER_DISTANCE_BETWEEN_CID, TORDER_SET_SCALE, TORDER_CLOSE_ALL_CLIENT, TORDER_LINK,
+	TORDER_HOUSEHOLD, TORDER_WALL, TORDER_NOISE, TORDER_BEACON, TORDER_RADIOS, TORDER_ACK
 };
 
 // int
@@ -60,5 +61,21 @@ struct VwifiRadioInfo
     uint32_t channel_width;
     int32_t  tx_power;
 };
+
+// One radio, as its own client describes it. Sent up periodically rather than
+// with a frame : what the server is missing is not the transmitter's channel --
+// that already rides on every frame in VwifiRadioInfo -- but every potential
+// receiver's, and a radio that is not transmitting never tells anyone anything.
+struct VwifiRadioEntry
+{
+    uint32_t radio_id;
+    uint32_t frequency;     // MHz, 0 when the interface is down or unknown
+    uint32_t channel_width; // MHz
+    int32_t  tx_power;      // dBm
+};
+
+// How many radios one report may describe. A node with more than this has
+// bigger problems than a truncated report.
+const uint32_t VWIFI_MAX_RADIOS_PER_CLIENT = 16;
 
 #endif

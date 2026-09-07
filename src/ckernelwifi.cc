@@ -10,6 +10,9 @@
 #include <net/if_arp.h>
 #include <linux/nl80211.h>
 
+#include <map>
+
+#include "cwifi.h"
 #include "ckernelwifi.h" // before #include <linux/ethtool.h>
 
 #include <linux/ethtool.h>
@@ -264,7 +267,7 @@ int CKernelWifi::process_messages(struct nl_msg *msg)
     << " tx_power=" << radio_info.tx_power
     << std::endl;
 
-	int value=_SendSignal(&radio_info, reinterpret_cast<char*>(nlh), msg_len);
+	int value=send_to_server(&radio_info, reinterpret_cast<char*>(nlh), msg_len);
 	if( value == SOCKET_ERROR )
 		manage_server_crash();
 
@@ -544,6 +547,15 @@ void CKernelWifi::recv_from_server(){
 		return;
 	}
 
+	/* and this to change only whether we keep acknowledging ourselves */
+	bool ack_faking;
+	if ( VwifiReadAckState(Buffer.GetBuffer(), valread, ack_faking) )
+	{
+		_fake_ack = ack_faking;
+		std::cout << "fake ack " << ( ack_faking ? "on" : "off" ) << std::endl;
+		return;
+	}
+
 	int signal = radio_info.tx_power;
 #ifdef _DEBUG
 	std::cout << "tx_power : " << signal << std::endl ;
@@ -763,11 +775,93 @@ void CKernelWifi::winet_update_loop(){
 			//std::cout << "update interface :  " << inet.getIndex() << std::endl ;
 			monwireless->get_winterface_infos(0);
 
+		// Now that the list has just been refreshed from nl80211, tell the
+		// server what is on it. Once a second, which is as often as anything
+		// downstream can observe: pwhm caches air statistics for 500 ms and the
+		// data model rate-limits object reads to 1 Hz on top of that.
+		send_radio_state();
+
 		using namespace  std::chrono_literals;
 		std::this_thread::sleep_for(1s);
 
 	}
 
+}
+
+ssize_t CKernelWifi::send_to_server(VwifiRadioInfo* radio_info, const char* buffer, int sizeOfBuffer)
+{
+	std::lock_guard<std::mutex> lock(_send_mutex);
+
+	return _SendSignal(radio_info, buffer, sizeOfBuffer);
+}
+
+void CKernelWifi::send_radio_state()
+{
+	if( ! is_connected_to_server() )
+		return;
+
+	// One entry per wiphy, not per interface. Several interfaces share a radio
+	// -- an AP and its guest BSS are both on wlan0's phy -- and it is the radio
+	// that has a channel. Taking the highest transmit power seen on the wiphy
+	// keeps a downed BSS from reporting the radio as silent.
+	std::map<uint32_t,VwifiRadioEntry> radios;
+
+	const auto& inets = _list_winterfaces.list_devices();
+	for (const auto& inet : inets)
+	{
+		uint32_t wiphy = inet.getWiphyId();
+		if( wiphy == WirelessDevice::INVALID_WIPHY )
+			continue;
+
+		auto it = radios.find(wiphy);
+		if( it == radios.end() )
+		{
+			VwifiRadioEntry entry{};
+			entry.radio_id = wiphy;
+			entry.frequency = inet.getFrequency();
+			entry.channel_width = inet.getChannelWidth();
+			entry.tx_power = inet.getTxPower() / 100;
+			radios[wiphy] = entry;
+			continue;
+		}
+
+		// An interface with no channel says nothing about the radio's; one that
+		// has a channel is the authority. Two disagreeing is not a case that
+		// arises -- hwsim has one channel per wiphy without channel contexts.
+		if( inet.getFrequency() )
+		{
+			it->second.frequency = inet.getFrequency();
+			it->second.channel_width = inet.getChannelWidth();
+		}
+
+		int power = inet.getTxPower() / 100;
+		if( power > it->second.tx_power )
+			it->second.tx_power = power;
+	}
+	delete &inets;
+
+	if( radios.empty() )
+		return;
+
+	VwifiRadioEntry entries[VWIFI_MAX_RADIOS_PER_CLIENT];
+	uint32_t count=0;
+	for(auto it=radios.begin(); it != radios.end() && count < VWIFI_MAX_RADIOS_PER_CLIENT; ++it)
+		entries[count++]=it->second;
+
+	char buffer[sizeof(struct nlmsghdr) + sizeof(struct genlmsghdr) + sizeof(uint32_t)
+			+ VWIFI_MAX_RADIOS_PER_CLIENT*sizeof(VwifiRadioEntry)];
+
+	ssize_t size=VwifiWriteRadioState(buffer,sizeof(buffer),entries,count);
+	if( size <= 0 )
+		return;
+
+	// The metadata half of the envelope is unused by a radio-state report --
+	// the report is the payload -- but the server reads it before the payload
+	// whatever the payload turns out to be, so it still has to be there.
+	VwifiRadioInfo radio_info{};
+
+	if( send_to_server(&radio_info, buffer, size) == SOCKET_ERROR )
+		manage_server_crash();
 }
 
 int CKernelWifi::init(){

@@ -66,6 +66,16 @@ void ForwardData(bool srcIsSpy, CWifiServer* src, CWifiServer* otherDst)
 
             if (!srcIsSpy)
             {
+                // A radio-state report travels this socket in place of a frame,
+                // so it has to be recognised before anything treats the buffer
+                // as one. It is not relayed : it is addressed to the server,
+                // and the other clients have their own radios to describe.
+                if (src->LearnRadioState(i, Buffer.GetBuffer(), valread))
+                {
+                    i++;
+                    continue;
+                }
+
                 // Keep learning even while the link is cut : the client goes on
                 // transmitting, and the address is what "vwifi-ctrl link" needs
                 // to find it again to restore it.

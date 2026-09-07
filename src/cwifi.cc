@@ -12,6 +12,7 @@
 #include "hwsim.h" // HWSIM_ATTR_FREQ
 #include <netlink/genl/genl.h> // genlmsg_parse
 
+#include "crf.h"
 #include "cwifi.h"
 
 //#include "config.h"
@@ -27,12 +28,102 @@ const int MTU=2352; // Maximum Transmission Unit :  2352 (from include/linux/iee
 // command and drops it rather than misreading it as a frame.
 const u8 VWIFI_CMD_LINK_STATE=240;
 
+// The same trick in the other direction : a client describing its own radios to
+// the server. 241 is likewise above every mac80211_hwsim command, so a server
+// built before this drops the report instead of relaying it as a frame.
+const u8 VWIFI_CMD_RADIO_STATE=241;
+
+// And 242 for the ack state. These three are the only commands vwifi invents;
+// they sit above every mac80211_hwsim command so that a peer built before any
+// of them drops the message rather than misreading it as a frame.
+const u8 VWIFI_CMD_ACK_STATE=242;
+
 struct VwifiLinkState
 {
 	struct nlmsghdr   nlh;
 	struct genlmsghdr gnlh;
 	u32               up;
 };
+
+struct VwifiAckState
+{
+	struct nlmsghdr   nlh;
+	struct genlmsghdr gnlh;
+	u32               faking;
+};
+
+// Header of a radio-state report. VwifiRadioEntry[Count] follows immediately,
+// which is why this is read back with memcpy rather than by casting the buffer
+// to a struct : the entries are not aligned to anything in particular once the
+// message has been through a socket.
+struct VwifiRadioStateHeader
+{
+	struct nlmsghdr   nlh;
+	struct genlmsghdr gnlh;
+	u32               count;
+};
+
+ssize_t VwifiRadioStateSize(u32 numberOfRadios)
+{
+	return static_cast<ssize_t>( sizeof(struct VwifiRadioStateHeader)
+			+ numberOfRadios*sizeof(struct VwifiRadioEntry) );
+}
+
+ssize_t VwifiWriteRadioState(char* buffer, ssize_t sizeOfBuffer,
+		const VwifiRadioEntry* radios, u32 numberOfRadios)
+{
+	if( buffer == NULL || radios == NULL )
+		return 0;
+
+	if( numberOfRadios == 0 || numberOfRadios > VWIFI_MAX_RADIOS_PER_CLIENT )
+		return 0;
+
+	ssize_t size=VwifiRadioStateSize(numberOfRadios);
+	if( sizeOfBuffer < size )
+		return 0;
+
+	struct VwifiRadioStateHeader header;
+	memset(&header,0,sizeof(header));
+	header.nlh.nlmsg_len=size;
+	header.gnlh.cmd=VWIFI_CMD_RADIO_STATE;
+	header.count=numberOfRadios;
+
+	memcpy(buffer,&header,sizeof(header));
+	memcpy(buffer+sizeof(header),radios,numberOfRadios*sizeof(struct VwifiRadioEntry));
+
+	return size;
+}
+
+bool VwifiReadRadioState(const char* buffer, ssize_t sizeOfBuffer,
+		VwifiRadioEntry* radios, u32& numberOfRadios)
+{
+	numberOfRadios=0;
+
+	if( buffer == NULL || radios == NULL )
+		return false;
+
+	if( sizeOfBuffer < static_cast<ssize_t>(sizeof(struct VwifiRadioStateHeader)) )
+		return false;
+
+	struct VwifiRadioStateHeader header;
+	memcpy(&header,buffer,sizeof(header));
+
+	if( header.gnlh.cmd != VWIFI_CMD_RADIO_STATE )
+		return false;
+
+	// The count comes off a socket, so it is not to be trusted until it has
+	// been checked against both the cap and the bytes actually present.
+	if( header.count == 0 || header.count > VWIFI_MAX_RADIOS_PER_CLIENT )
+		return false;
+
+	if( sizeOfBuffer < VwifiRadioStateSize(header.count) )
+		return false;
+
+	memcpy(radios,buffer+sizeof(header),header.count*sizeof(struct VwifiRadioEntry));
+	numberOfRadios=header.count;
+
+	return true;
+}
 
 std::string VwifiMacToString(const TByte* mac)
 {
@@ -53,6 +144,21 @@ bool VwifiReadLinkState(const char* buffer, ssize_t sizeOfBuffer, bool& up)
 		return false;
 
 	up=( message->up != 0 );
+
+	return true;
+}
+
+bool VwifiReadAckState(const char* buffer, ssize_t sizeOfBuffer, bool& faking)
+{
+	if( sizeOfBuffer != static_cast<ssize_t>(sizeof(struct VwifiAckState)) )
+		return false;
+
+	const struct VwifiAckState* message=reinterpret_cast<const struct VwifiAckState*>(buffer);
+
+	if( message->gnlh.cmd != VWIFI_CMD_ACK_STATE )
+		return false;
+
+	faking=( message->faking != 0 );
 
 	return true;
 }
@@ -98,6 +204,26 @@ std::string CWifi::GetTransmitter(struct nlmsghdr* nlh)
 	return VwifiMacToString(reinterpret_cast<const TByte*>(nla_data(attrs[HWSIM_ATTR_ADDR_TRANSMITTER])));
 }
 
+bool CWifi::GetFrameBody(struct nlmsghdr* nlh, const char*& body, u32& sizeOfBody)
+{
+	struct nlattr *attrs[HWSIM_ATTR_MAX + 1];
+
+	if( genlmsg_parse(nlh, 0, attrs, HWSIM_ATTR_MAX, NULL) )
+		return false;
+
+	if( ! attrs[HWSIM_ATTR_FRAME] )
+		return false;
+
+	int length=nla_len(attrs[HWSIM_ATTR_FRAME]);
+	if( length <= 0 )
+		return false;
+
+	body=reinterpret_cast<const char*>(nla_data(attrs[HWSIM_ATTR_FRAME]));
+	sizeOfBody=static_cast<u32>(length);
+
+	return true;
+}
+
 ssize_t CWifi::SendLinkStateWithSocket(CSocket* socket, TDescriptor descriptor, bool up)
 {
 	// The client reads [VwifiRadioInfo][netlink message] whatever the message
@@ -114,6 +240,20 @@ ssize_t CWifi::SendLinkStateWithSocket(CSocket* socket, TDescriptor descriptor, 
 			reinterpret_cast<const char*>(&message), sizeof(message));
 }
 
+ssize_t CWifi::SendAckStateWithSocket(CSocket* socket, TDescriptor descriptor, bool faking)
+{
+	VwifiRadioInfo radio_info{};
+
+	struct VwifiAckState message;
+	memset(&message,0,sizeof(message));
+	message.nlh.nlmsg_len=sizeof(message);
+	message.gnlh.cmd=VWIFI_CMD_ACK_STATE;
+	message.faking=( faking ? 1 : 0 );
+
+	return SendSignalWithSocket(socket, descriptor, &radio_info,
+			reinterpret_cast<const char*>(&message), sizeof(message));
+}
+
 TPower CWifi::BoundedPower(int power)
 {
 	if( power < TPower_MIN )
@@ -123,15 +263,19 @@ TPower CWifi::BoundedPower(int power)
 	return power;
 }
 
-bool CWifi::PacketIsLost(TPower signalLevel)
+bool CWifi::PacketIsLost(TPower signalLevel, int noiseFloorDbm, u32 channelWidth, bool robust)
 {
-	//don't forget : signalLevel is negative
+	// signalLevel is the power at this receiver, after path loss and any wall
+	// between the two households : dBm, and negative.
+	int noise=NoiseFloorForWidth(noiseFloorDbm,channelWidth);
+	int snr=static_cast<int>(signalLevel) - noise;
 
-	int alea = rand() % 53 + 40; // between 40 and 92
-	if( alea > -signalLevel )
-		return false;
+	double per=PacketErrorRate(snr,robust);
 
-	return true;
+	// rand() is enough here. This is a coin weighted by the error curve, not a
+	// source anything depends on being unpredictable, and keeping it means a
+	// run can still be reproduced by seeding srand().
+	return ( ( static_cast<double>(rand()) / static_cast<double>(RAND_MAX) ) < per );
 }
 
 ssize_t CWifi::SendSignalWithSocket(CSocket* socket, TDescriptor descriptor, VwifiRadioInfo* radio_info, const char* buffer, int sizeOfBuffer)

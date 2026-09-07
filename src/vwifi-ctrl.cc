@@ -21,6 +21,362 @@ TPort Port_Ctrl = DEFAULT_CTRL_PORT;
 
 char* NameOfProg;
 
+void Help();
+
+// Every one of these follows the shape "link" established : connect, send the
+// order, send its arguments, read one status code back. The code is 0 or -1,
+// and -1 always means the same thing -- no connected client has ever
+// transmitted from that MAC, so the server has nothing to apply it to.
+static int SendOrderWithMacAndValue(const char* what, TOrder order, const TByte* mac,
+		const void* value, size_t sizeOfValue)
+{
+	CSocketClientITCP socket;
+
+	socket.Init(IP_Ctrl.c_str(),Port_Ctrl);
+
+	if( ! socket.ConnectLoop() )
+	{
+		cerr<<"Error : "<<what<<" : socket.Connect error"<<endl;
+		return 1;
+	}
+
+	if( socket.Send(reinterpret_cast<char*>(&order),sizeof(order)) == SOCKET_ERROR )
+	{
+		cerr<<"Error : "<<what<<" : socket.Send : order"<<endl;
+		return 1;
+	}
+
+	if( socket.Send(reinterpret_cast<char*>(const_cast<TByte*>(mac)),ETH_ALEN) == SOCKET_ERROR )
+	{
+		cerr<<"Error : "<<what<<" : socket.Send : MAC"<<endl;
+		return 1;
+	}
+
+	if( socket.Send(reinterpret_cast<char*>(const_cast<void*>(value)),sizeOfValue) == SOCKET_ERROR )
+	{
+		cerr<<"Error : "<<what<<" : socket.Send : value"<<endl;
+		return 1;
+	}
+
+	int codeError;
+	if( socket.Read(reinterpret_cast<char*>(&codeError),sizeof(codeError)) == SOCKET_ERROR )
+	{
+		cerr<<"Error : "<<what<<" : socket.Read : code"<<endl;
+		return 1;
+	}
+
+	socket.Close();
+
+	if( codeError )
+	{
+		cerr<<"Error : "<<what<<" : no connected Client has transmitted from "<<VwifiMacToString(mac)<<endl;
+		return 1;
+	}
+
+	return 0;
+}
+
+int SetHousehold(int argc, char** argv)
+{
+	if( argc != 3 )
+	{
+		cerr<<"Error : household : the number of parameter is uncorrect"<<endl;
+		Help();
+		return 1;
+	}
+
+	TByte mac[ETH_ALEN];
+	if( ParseAddress(argv[1],mac) != ETH_ALEN )
+	{
+		cerr<<"Error : household : \""<<argv[1]<<"\" is not a MAC address"<<endl;
+		return 1;
+	}
+
+	if( ! isPositiveInt(argv[2]) )
+	{
+		cerr<<"Error : household : \""<<argv[2]<<"\" is not a household number"<<endl;
+		return 1;
+	}
+
+	u32 household=static_cast<u32>(stoi(argv[2]));
+
+	if( SendOrderWithMacAndValue("household",TORDER_HOUSEHOLD,mac,&household,sizeof(household)) )
+		return 1;
+
+	cout<<VwifiMacToString(mac)<<" : household "<<household<<endl;
+
+	return 0;
+}
+
+int SetWall(int argc, char** argv)
+{
+	if( argc != 4 )
+	{
+		cerr<<"Error : wall : the number of parameter is uncorrect"<<endl;
+		Help();
+		return 1;
+	}
+
+	if( ! isPositiveInt(argv[1]) || ! isPositiveInt(argv[2]) )
+	{
+		cerr<<"Error : wall : the households must be positive numbers"<<endl;
+		return 1;
+	}
+
+	u32 householdA=static_cast<u32>(stoi(argv[1]));
+	u32 householdB=static_cast<u32>(stoi(argv[2]));
+
+	int dB=atoi(argv[3]);
+	if( dB < 0 )
+	{
+		cerr<<"Error : wall : the attenuation is a loss, so it cannot be negative"<<endl;
+		return 1;
+	}
+
+	CSocketClientITCP socket;
+
+	socket.Init(IP_Ctrl.c_str(),Port_Ctrl);
+
+	if( ! socket.ConnectLoop() )
+	{
+		cerr<<"Error : wall : socket.Connect error"<<endl;
+		return 1;
+	}
+
+	TOrder order=TORDER_WALL;
+	if( socket.Send(reinterpret_cast<char*>(&order),sizeof(order)) == SOCKET_ERROR ||
+	    socket.Send(reinterpret_cast<char*>(&householdA),sizeof(householdA)) == SOCKET_ERROR ||
+	    socket.Send(reinterpret_cast<char*>(&householdB),sizeof(householdB)) == SOCKET_ERROR ||
+	    socket.Send(reinterpret_cast<char*>(&dB),sizeof(dB)) == SOCKET_ERROR )
+	{
+		cerr<<"Error : wall : socket.Send"<<endl;
+		return 1;
+	}
+
+	int codeError;
+	if( socket.Read(reinterpret_cast<char*>(&codeError),sizeof(codeError)) == SOCKET_ERROR )
+	{
+		cerr<<"Error : wall : socket.Read : code"<<endl;
+		return 1;
+	}
+
+	socket.Close();
+
+	if( householdA == householdB )
+		cout<<"wall between any two households : "<<dB<<" dB"<<endl;
+	else
+		cout<<"wall between household "<<householdA<<" and "<<householdB<<" : "<<dB<<" dB"<<endl;
+
+	return 0;
+}
+
+int SetNoiseFloor(int argc, char** argv)
+{
+	if( argc != 3 && argc != 4 )
+	{
+		cerr<<"Error : noise : the number of parameter is uncorrect"<<endl;
+		Help();
+		return 1;
+	}
+
+	TByte mac[ETH_ALEN];
+	if( ParseAddress(argv[1],mac) != ETH_ALEN )
+	{
+		cerr<<"Error : noise : \""<<argv[1]<<"\" is not a MAC address"<<endl;
+		return 1;
+	}
+
+	int noiseFloor=atoi(argv[2]);
+	if( noiseFloor >= 0 )
+	{
+		cerr<<"Error : noise : a noise floor is a negative dBm value"<<endl;
+		return 1;
+	}
+
+	// Without a radio id the floor goes on every radio the node has, which is
+	// what a single-radio station wants and what a "make this whole node deaf"
+	// scenario wants too.
+	u32 radioId=RADIO_ID_ALL;
+	if( argc == 4 )
+	{
+		if( ! isPositiveInt(argv[3]) )
+		{
+			cerr<<"Error : noise : \""<<argv[3]<<"\" is not a radio id"<<endl;
+			return 1;
+		}
+		radioId=static_cast<u32>(stoi(argv[3]));
+	}
+
+	struct { u32 radioId; int noiseFloor; } payload;
+	payload.radioId=radioId;
+	payload.noiseFloor=noiseFloor;
+
+	if( SendOrderWithMacAndValue("noise",TORDER_NOISE,mac,&payload,sizeof(payload)) )
+		return 1;
+
+	cout<<VwifiMacToString(mac)<<" : noise floor "<<noiseFloor<<" dBm";
+	if( radioId != RADIO_ID_ALL )
+		cout<<" on radio "<<radioId;
+	cout<<endl;
+
+	return 0;
+}
+
+int SetBeaconState(int argc, char** argv)
+{
+	if( argc != 3 )
+	{
+		cerr<<"Error : beacon : the number of parameter is uncorrect"<<endl;
+		Help();
+		return 1;
+	}
+
+	TByte mac[ETH_ALEN];
+	if( ParseAddress(argv[1],mac) != ETH_ALEN )
+	{
+		cerr<<"Error : beacon : \""<<argv[1]<<"\" is not a MAC address"<<endl;
+		return 1;
+	}
+
+	int relayed;
+	if( ! strcasecmp(argv[2],"on") )
+		relayed=1;
+	else if( ! strcasecmp(argv[2],"off") )
+		relayed=0;
+	else
+	{
+		cerr<<"Error : beacon : the state can only be \"on\" or \"off\""<<endl;
+		return 1;
+	}
+
+	if( SendOrderWithMacAndValue("beacon",TORDER_BEACON,mac,&relayed,sizeof(relayed)) )
+		return 1;
+
+	cout<<VwifiMacToString(mac)<<" : beacons "<<( relayed ? "relayed" : "swallowed" )<<endl;
+
+	return 0;
+}
+
+int SetAckState(int argc, char** argv)
+{
+	if( argc != 3 )
+	{
+		cerr<<"Error : ack : the number of parameter is uncorrect"<<endl;
+		Help();
+		return 1;
+	}
+
+	TByte mac[ETH_ALEN];
+	if( ParseAddress(argv[1],mac) != ETH_ALEN )
+	{
+		cerr<<"Error : ack : \""<<argv[1]<<"\" is not a MAC address"<<endl;
+		return 1;
+	}
+
+	int faking;
+	if( ! strcasecmp(argv[2],"on") )
+		faking=1;
+	else if( ! strcasecmp(argv[2],"off") )
+		faking=0;
+	else
+	{
+		cerr<<"Error : ack : the state can only be \"on\" or \"off\""<<endl;
+		return 1;
+	}
+
+	if( SendOrderWithMacAndValue("ack",TORDER_ACK,mac,&faking,sizeof(faking)) )
+		return 1;
+
+	cout<<VwifiMacToString(mac)<<" : fake ack "<<( faking ? "on" : "off" )<<endl;
+
+	return 0;
+}
+
+int AskRadios()
+{
+	CSocketClientITCP socket;
+
+	socket.Init(IP_Ctrl.c_str(),Port_Ctrl);
+
+	if( ! socket.ConnectLoop() )
+	{
+		cerr<<"Error : radios : socket.Connect error"<<endl;
+		return 1;
+	}
+
+	TOrder order=TORDER_RADIOS;
+	if( socket.Send(reinterpret_cast<char*>(&order),sizeof(order)) == SOCKET_ERROR )
+	{
+		cerr<<"Error : radios : socket.Send : order"<<endl;
+		return 1;
+	}
+
+	TIndex number;
+	if( socket.Read(reinterpret_cast<char*>(&number),sizeof(number)) == SOCKET_ERROR )
+	{
+		cerr<<"Error : radios : socket.Read : number"<<endl;
+		return 1;
+	}
+
+	for(TIndex i=0; i<number; i++)
+	{
+		TCID cid;
+		u32 household;
+		u32 count;
+
+		if( socket.Read(reinterpret_cast<char*>(&cid),sizeof(cid)) == SOCKET_ERROR ||
+		    socket.Read(reinterpret_cast<char*>(&household),sizeof(household)) == SOCKET_ERROR ||
+		    socket.Read(reinterpret_cast<char*>(&count),sizeof(count)) == SOCKET_ERROR )
+		{
+			cerr<<"Error : radios : socket.Read : client"<<endl;
+			return 1;
+		}
+
+		cout<<"CID "<<cid<<" household "<<household;
+		if( count == 0 )
+		{
+			cout<<" : no radio reported yet"<<endl;
+			continue;
+		}
+		cout<<endl;
+
+		for(u32 r=0; r<count; r++)
+		{
+			u32 fields[3];
+			int scalars[2];
+			u64 airtime[3];
+
+			if( socket.Read(reinterpret_cast<char*>(fields),sizeof(fields)) == SOCKET_ERROR ||
+			    socket.Read(reinterpret_cast<char*>(scalars),sizeof(scalars)) == SOCKET_ERROR ||
+			    socket.Read(reinterpret_cast<char*>(airtime),sizeof(airtime)) == SOCKET_ERROR )
+			{
+				cerr<<"Error : radios : socket.Read : radio"<<endl;
+				return 1;
+			}
+
+			cout<<"  radio "<<fields[0]<<" : ";
+			if( fields[1] )
+				cout<<fields[1]<<" MHz / "<<fields[2]<<" MHz wide";
+			else
+				cout<<"no channel";
+
+			cout<<", tx "<<scalars[0]<<" dBm, noise "<<scalars[1]<<" dBm"<<endl;
+
+			// Microseconds, monotonic since the client connected. Two samples
+			// and the interval between them is what gives a utilisation; a
+			// single sample on its own says only that the radio has been busy
+			// for some of its life.
+			cout<<"    airtime us : tx "<<airtime[0]
+			    <<"  rx "<<airtime[1]
+			    <<"  other households "<<airtime[2]<<endl;
+		}
+	}
+
+	socket.Close();
+
+	return 0;
+}
+
 void Help()
 {
 	cout<<NameOfProg<<" [order]"<<endl;
@@ -51,6 +407,38 @@ void Help()
 	cout<<"		- VALUE can be a decimal number"<<endl;
 	cout<<"	close"<<endl;
 	cout<<"		- Close all the connections with Wifi Clients"<<endl;
+	cout<<"	household MAC N"<<endl;
+	cout<<"		- Put the Client transmitting from MAC into household N."<<endl;
+	cout<<"		  Everything starts in household 0. Two nodes in the same household"<<endl;
+	cout<<"		  hear each other with nothing in the way; between two different ones"<<endl;
+	cout<<"		  the wall below applies."<<endl;
+	cout<<"	wall N M DB"<<endl;
+	cout<<"		- Put DB dB of attenuation between household N and household M"<<endl;
+	cout<<"		- wall N N DB : set the attenuation used between any two households"<<endl;
+	cout<<"		                that have no wall of their own"<<endl;
+	cout<<"	noise MAC DBM [RADIO]"<<endl;
+	cout<<"		- Set the noise floor of the Client transmitting from MAC to DBM,"<<endl;
+	cout<<"		  which is negative. Raising it is how a link is made marginal without"<<endl;
+	cout<<"		  moving anything. Applies to every radio of that node unless RADIO"<<endl;
+	cout<<"		  names one."<<endl;
+	cout<<"	beacon MAC on/off"<<endl;
+	cout<<"		- beacon MAC off : stop relaying the beacons that Client transmits,"<<endl;
+	cout<<"		                   and nothing else. It goes on believing it beacons;"<<endl;
+	cout<<"		                   a station behind it counts the misses and gives up."<<endl;
+	cout<<"		- beacon MAC on : relay them again"<<endl;
+	cout<<"	ack MAC on/off"<<endl;
+	cout<<"		- ack MAC off : stop the Client transmitting from MAC from reporting its"<<endl;
+	cout<<"		                own transmissions as acknowledged. Cutting the link does"<<endl;
+	cout<<"		                this too, along with everything else."<<endl;
+	cout<<"		                A station drops its association within ~10s of this,"<<endl;
+	cout<<"		                whether or not it is still hearing beacons -- so it is"<<endl;
+	cout<<"		                the way to force a de-association, but not evidence that"<<endl;
+	cout<<"		                beacon loss caused one."<<endl;
+	cout<<"		- ack MAC on : acknowledge again"<<endl;
+	cout<<"		- note that a later \"link\" command overwrites this, and vice versa"<<endl;
+	cout<<"	radios"<<endl;
+	cout<<"		- List what each Client has reported about its own radios : channel,"<<endl;
+	cout<<"		  power, noise floor, and the airtime each one has accumulated"<<endl;
 	cout<<endl;
 	cout<<" [-p PORT] or [--port PORT] : Set the port used by the vwifi-server (by default PORT="<< Port_Ctrl <<")"<<endl;
 	cout<<" [-i IP] or [--ip IP] : Set the IP used by the vwifi-server (by default IP="<< IP_Ctrl <<")"<<endl;
@@ -895,6 +1283,24 @@ int main(int argc , char *argv[])
 
 	if( ! strcasecmp(param_cmd[0],"close") )
 		return CloseAllClient();
+
+	if( ! strcasecmp(param_cmd[0],"household") )
+		return SetHousehold(nbr_param_cmd, param_cmd.get());
+
+	if( ! strcasecmp(param_cmd[0],"wall") )
+		return SetWall(nbr_param_cmd, param_cmd.get());
+
+	if( ! strcasecmp(param_cmd[0],"noise") )
+		return SetNoiseFloor(nbr_param_cmd, param_cmd.get());
+
+	if( ! strcasecmp(param_cmd[0],"beacon") )
+		return SetBeaconState(nbr_param_cmd, param_cmd.get());
+
+	if( ! strcasecmp(param_cmd[0],"radios") )
+		return AskRadios();
+
+	if( ! strcasecmp(param_cmd[0],"ack") )
+		return SetAckState(nbr_param_cmd, param_cmd.get());
 
 	cerr<<NameOfProg<<" : Error : unknown order : "<<param_cmd[0]<<endl;
 

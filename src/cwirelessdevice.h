@@ -20,6 +20,12 @@ public:
 	struct ether_addr _macaddr ;
 	struct ether_addr _machwsim = {0x00,0X00,0x00,0X00,0x00,0X00};
 
+	// What this interface is tuned to, as nl80211 reports it. 0 when the
+	// interface has no channel -- it is down, or it is a station that has not
+	// associated -- which is a fact worth reporting rather than a gap.
+	uint32_t _frequency = 0 ;
+	uint32_t _channel_width = 20 ;
+
 	public:
 
 	WirelessDevice();
@@ -63,6 +69,10 @@ public:
 	int getIndex() const ;
 	uint32_t getWiphyId() const;
 	int getTxPower() const ;
+
+	uint32_t getFrequency() const ;
+	uint32_t getChannelWidth() const ;
+	void setChannel(uint32_t frequency, uint32_t width) ;
 
 };
 

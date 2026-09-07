@@ -262,6 +262,171 @@ void CCTRLServer::SetLinkState()
 		cerr<<"Error : SetLinkState : Send : code"<<endl;
 }
 
+void CCTRLServer::SetHousehold()
+{
+	TByte mac[ETH_ALEN];
+
+	if( Read(reinterpret_cast<char*>(mac), sizeof(mac)) == SOCKET_ERROR )
+		return;
+
+	u32 household;
+
+	if( Read(reinterpret_cast<char*>(&household), sizeof(household)) == SOCKET_ERROR )
+		return;
+
+	int codeError = WifiServerITCP->SetHouseholdByMac(VwifiMacToString(mac), household) ? 0 : -1;
+
+	if( Send(reinterpret_cast<char*>(&codeError),sizeof(codeError)) == SOCKET_ERROR )
+		cerr<<"Error : SetHousehold : Send : code"<<endl;
+}
+
+void CCTRLServer::SetWall()
+{
+	u32 householdA;
+	u32 householdB;
+	int dB;
+
+	if( Read(reinterpret_cast<char*>(&householdA), sizeof(householdA)) == SOCKET_ERROR )
+		return;
+
+	if( Read(reinterpret_cast<char*>(&householdB), sizeof(householdB)) == SOCKET_ERROR )
+		return;
+
+	if( Read(reinterpret_cast<char*>(&dB), sizeof(dB)) == SOCKET_ERROR )
+		return;
+
+	int codeError=0;
+
+	// The same household on both sides means "every pair that has no wall of
+	// its own", which is the knob a two-household scenario actually wants : one
+	// number, rather than an entry for each pair.
+	if( householdA == householdB )
+		SetDefaultWallAttenuation(dB);
+	else
+		SetWallAttenuation(householdA,householdB,dB);
+
+	if( Send(reinterpret_cast<char*>(&codeError),sizeof(codeError)) == SOCKET_ERROR )
+		cerr<<"Error : SetWall : Send : code"<<endl;
+}
+
+void CCTRLServer::SetNoiseFloor()
+{
+	TByte mac[ETH_ALEN];
+
+	if( Read(reinterpret_cast<char*>(mac), sizeof(mac)) == SOCKET_ERROR )
+		return;
+
+	u32 radioId;
+	int noiseFloor;
+
+	if( Read(reinterpret_cast<char*>(&radioId), sizeof(radioId)) == SOCKET_ERROR )
+		return;
+
+	if( Read(reinterpret_cast<char*>(&noiseFloor), sizeof(noiseFloor)) == SOCKET_ERROR )
+		return;
+
+	int codeError = WifiServerITCP->SetNoiseFloorByMac(VwifiMacToString(mac), radioId, noiseFloor) ? 0 : -1;
+
+	if( Send(reinterpret_cast<char*>(&codeError),sizeof(codeError)) == SOCKET_ERROR )
+		cerr<<"Error : SetNoiseFloor : Send : code"<<endl;
+}
+
+void CCTRLServer::SetBeaconState()
+{
+	TByte mac[ETH_ALEN];
+
+	if( Read(reinterpret_cast<char*>(mac), sizeof(mac)) == SOCKET_ERROR )
+		return;
+
+	int relayed;
+
+	if( Read(reinterpret_cast<char*>(&relayed), sizeof(relayed)) == SOCKET_ERROR )
+		return;
+
+	int codeError = WifiServerITCP->SetBeaconsRelayedByMac(VwifiMacToString(mac), relayed != 0) ? 0 : -1;
+
+	if( Send(reinterpret_cast<char*>(&codeError),sizeof(codeError)) == SOCKET_ERROR )
+		cerr<<"Error : SetBeaconState : Send : code"<<endl;
+}
+
+void CCTRLServer::SetAckState()
+{
+	TByte mac[ETH_ALEN];
+
+	if( Read(reinterpret_cast<char*>(mac), sizeof(mac)) == SOCKET_ERROR )
+		return;
+
+	int faking;
+
+	if( Read(reinterpret_cast<char*>(&faking), sizeof(faking)) == SOCKET_ERROR )
+		return;
+
+	int codeError = WifiServerITCP->SetAckFakingByMac(VwifiMacToString(mac), faking != 0) ? 0 : -1;
+
+	if( Send(reinterpret_cast<char*>(&codeError),sizeof(codeError)) == SOCKET_ERROR )
+		cerr<<"Error : SetAckState : Send : code"<<endl;
+}
+
+void CCTRLServer::SendRadios()
+{
+	TIndex number=WifiServerITCP->GetNumberClient();
+
+	if( Send(reinterpret_cast<char*>(&number), sizeof(number)) == SOCKET_ERROR )
+		return;
+
+	for(TIndex i=0; i<number; i++)
+	{
+		CInfoWifi* infoWifi=WifiServerITCP->GetReferenceOnInfoWifiByIndex(i);
+
+		TCID cid=( infoWifi ? infoWifi->GetCid() : 0 );
+		if( Send(reinterpret_cast<char*>(&cid),sizeof(cid)) == SOCKET_ERROR )
+			return;
+
+		u32 household=( infoWifi ? infoWifi->GetHousehold() : 0 );
+		if( Send(reinterpret_cast<char*>(&household),sizeof(household)) == SOCKET_ERROR )
+			return;
+
+		u32 count=0;
+		if( infoWifi )
+			count=infoWifi->GetRadios().size();
+
+		if( Send(reinterpret_cast<char*>(&count),sizeof(count)) == SOCKET_ERROR )
+			return;
+
+		if( ! infoWifi )
+			continue;
+
+		const map<u32,CRadioState>& radios=infoWifi->GetRadios();
+		for(map<u32,CRadioState>::const_iterator it=radios.begin(); it != radios.end(); ++it)
+		{
+			// A flat record rather than the struct : CRadioState is the
+			// server's own and is free to grow, and this is a wire format.
+			u32 fields[3];
+			fields[0]=it->second.RadioId;
+			fields[1]=it->second.Channel.Centre;
+			fields[2]=it->second.Channel.Width;
+
+			if( Send(reinterpret_cast<char*>(fields),sizeof(fields)) == SOCKET_ERROR )
+				return;
+
+			int scalars[2];
+			scalars[0]=it->second.TxPower;
+			scalars[1]=it->second.NoiseFloor;
+
+			if( Send(reinterpret_cast<char*>(scalars),sizeof(scalars)) == SOCKET_ERROR )
+				return;
+
+			u64 airtime[3];
+			airtime[0]=it->second.TxUs;
+			airtime[1]=it->second.RxUs;
+			airtime[2]=it->second.ExtUs;
+
+			if( Send(reinterpret_cast<char*>(airtime),sizeof(airtime)) == SOCKET_ERROR )
+				return;
+		}
+	}
+}
+
 void CCTRLServer::SendStatus()
 {
 	if( Send(reinterpret_cast<char*>(&CanLostPackets),sizeof(CanLostPackets)) == SOCKET_ERROR )
@@ -453,6 +618,30 @@ void CCTRLServer::ReceiveOrder()
 
 			case TORDER_LINK :
 				SetLinkState();
+				break;
+
+			case TORDER_HOUSEHOLD :
+				SetHousehold();
+				break;
+
+			case TORDER_WALL :
+				SetWall();
+				break;
+
+			case TORDER_NOISE :
+				SetNoiseFloor();
+				break;
+
+			case TORDER_BEACON :
+				SetBeaconState();
+				break;
+
+			case TORDER_RADIOS :
+				SendRadios();
+				break;
+
+			case TORDER_ACK :
+				SetAckState();
 				break;
 
 			case TORDER_STATUS :
