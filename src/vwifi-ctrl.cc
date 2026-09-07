@@ -1,6 +1,7 @@
 #include <iostream> // cout
 #include <memory> // unique_ptr
 
+#include <stdlib.h> // atof
 #include <string.h> //strlen
 
 #include <net/ethernet.h> // ETH_ALEN
@@ -8,11 +9,13 @@
 #include "config.h"
 #include "tools.h" // isInt isPositiveInt isIntOrFloat
 #include "addinterfaces.h" // ParseAddress
+#include "crf.h" // CWall, WallMaterialByName
 #include "cwifi.h" // VwifiMacToString
 #include "csocketclientitcp.h"
 #include "types.h"
 #include "ccoordinate.h" // CCoordinate
 #include "cinfowifi.h"
+#include "cwifiserver.h" // SetWall / CWall helpers
 
 using namespace std;
 
@@ -110,7 +113,7 @@ int SetHousehold(int argc, char** argv)
 
 int SetWall(int argc, char** argv)
 {
-	if( argc != 4 )
+	if( argc != 4 && argc != 5 )
 	{
 		cerr<<"Error : wall : the number of parameter is uncorrect"<<endl;
 		Help();
@@ -126,11 +129,35 @@ int SetWall(int argc, char** argv)
 	u32 householdA=static_cast<u32>(stoi(argv[1]));
 	u32 householdB=static_cast<u32>(stoi(argv[2]));
 
-	int dB=atoi(argv[3]);
-	if( dB < 0 )
+	// A plain number is a loss that does not vary with frequency : predictable,
+	// and what this command used to mean. A material name is the physical
+	// thing, whose loss rises with frequency.
+	CWall wall;
+	bool isMaterial=false;
+
+	if( isPositiveInt(argv[3]) )
 	{
-		cerr<<"Error : wall : the attenuation is a loss, so it cannot be negative"<<endl;
+		wall=CWall(atof(argv[3]),0.0,1);
+	}
+	else if( WallMaterialByName(argv[3],wall) )
+	{
+		isMaterial=true;
+	}
+	else
+	{
+		cerr<<"Error : wall : \""<<argv[3]<<"\" is neither a positive number of dB"
+		    <<" nor one of : "<<WallMaterialNames()<<endl;
 		return 1;
+	}
+
+	if( argc == 5 )
+	{
+		if( ! isPositiveInt(argv[4]) || stoi(argv[4]) < 1 )
+		{
+			cerr<<"Error : wall : the count must be a positive number of walls"<<endl;
+			return 1;
+		}
+		wall.Count=static_cast<u32>(stoi(argv[4]));
 	}
 
 	CSocketClientITCP socket;
@@ -147,7 +174,9 @@ int SetWall(int argc, char** argv)
 	if( socket.Send(reinterpret_cast<char*>(&order),sizeof(order)) == SOCKET_ERROR ||
 	    socket.Send(reinterpret_cast<char*>(&householdA),sizeof(householdA)) == SOCKET_ERROR ||
 	    socket.Send(reinterpret_cast<char*>(&householdB),sizeof(householdB)) == SOCKET_ERROR ||
-	    socket.Send(reinterpret_cast<char*>(&dB),sizeof(dB)) == SOCKET_ERROR )
+	    socket.Send(reinterpret_cast<char*>(&wall.A),sizeof(wall.A)) == SOCKET_ERROR ||
+	    socket.Send(reinterpret_cast<char*>(&wall.B),sizeof(wall.B)) == SOCKET_ERROR ||
+	    socket.Send(reinterpret_cast<char*>(&wall.Count),sizeof(wall.Count)) == SOCKET_ERROR )
 	{
 		cerr<<"Error : wall : socket.Send"<<endl;
 		return 1;
@@ -163,9 +192,24 @@ int SetWall(int argc, char** argv)
 	socket.Close();
 
 	if( householdA == householdB )
-		cout<<"wall between any two households : "<<dB<<" dB"<<endl;
+		cout<<"wall between any two households : ";
 	else
-		cout<<"wall between household "<<householdA<<" and "<<householdB<<" : "<<dB<<" dB"<<endl;
+		cout<<"wall between household "<<householdA<<" and "<<householdB<<" : ";
+
+	if( isMaterial )
+		cout<<argv[3];
+	else
+		cout<<wall.A<<" dB";
+
+	if( wall.Count > 1 )
+		cout<<" x"<<wall.Count;
+
+	// Print what it comes to on each band. A material is a pair of
+	// coefficients, and nobody reads dB out of those at a glance -- while the
+	// gap between the bands is the whole reason for setting one.
+	cout<<" -> "<<wall.Loss(2412)<<" dB @2.4GHz, "
+	    <<wall.Loss(5180)<<" dB @5GHz, "
+	    <<wall.Loss(6135)<<" dB @6GHz"<<endl;
 
 	return 0;
 }
@@ -412,10 +456,16 @@ void Help()
 	cout<<"		  Everything starts in household 0. Two nodes in the same household"<<endl;
 	cout<<"		  hear each other with nothing in the way; between two different ones"<<endl;
 	cout<<"		  the wall below applies."<<endl;
-	cout<<"	wall N M DB"<<endl;
-	cout<<"		- Put DB dB of attenuation between household N and household M"<<endl;
-	cout<<"		- wall N N DB : set the attenuation used between any two households"<<endl;
-	cout<<"		                that have no wall of their own"<<endl;
+	cout<<"	wall N M DB|MATERIAL [COUNT]"<<endl;
+	cout<<"		- Put a wall between household N and household M"<<endl;
+	cout<<"		- DB : a loss in dB that does not vary with frequency"<<endl;
+	cout<<"		- MATERIAL : "<<WallMaterialNames()<<endl;
+	cout<<"		             a real material, whose loss rises with frequency"<<endl;
+	cout<<"		             (3GPP TR 38.901). Concrete costs ~15 dB at 2.4GHz and"<<endl;
+	cout<<"		             ~26 dB at 5GHz, which is why a station loses 5GHz first."<<endl;
+	cout<<"		- COUNT : how many such walls are in the way (default 1)"<<endl;
+	cout<<"		- wall N N ... : set the wall used between any two households that"<<endl;
+	cout<<"		                 have no wall of their own"<<endl;
 	cout<<"	noise MAC DBM [RADIO]"<<endl;
 	cout<<"		- Set the noise floor of the Client transmitting from MAC to DBM,"<<endl;
 	cout<<"		  which is negative. Raising it is how a link is made marginal without"<<endl;

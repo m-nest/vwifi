@@ -284,7 +284,9 @@ void CCTRLServer::SetWall()
 {
 	u32 householdA;
 	u32 householdB;
-	int dB;
+	double a;
+	double b;
+	u32 count;
 
 	if( Read(reinterpret_cast<char*>(&householdA), sizeof(householdA)) == SOCKET_ERROR )
 		return;
@@ -292,18 +294,31 @@ void CCTRLServer::SetWall()
 	if( Read(reinterpret_cast<char*>(&householdB), sizeof(householdB)) == SOCKET_ERROR )
 		return;
 
-	if( Read(reinterpret_cast<char*>(&dB), sizeof(dB)) == SOCKET_ERROR )
+	// The wall arrives as its two coefficients rather than as a loss, because
+	// the loss depends on the frequency of the frame crossing it, and that is
+	// not known until one does.
+	if( Read(reinterpret_cast<char*>(&a), sizeof(a)) == SOCKET_ERROR )
+		return;
+
+	if( Read(reinterpret_cast<char*>(&b), sizeof(b)) == SOCKET_ERROR )
+		return;
+
+	if( Read(reinterpret_cast<char*>(&count), sizeof(count)) == SOCKET_ERROR )
 		return;
 
 	int codeError=0;
 
+	CWall wall(a,b,count);
+
 	// The same household on both sides means "every pair that has no wall of
 	// its own", which is the knob a two-household scenario actually wants : one
-	// number, rather than an entry for each pair.
+	// wall, rather than an entry for each pair.
+	// Qualified : CCTRLServer has a SetWall of its own -- this one -- and the
+	// unqualified name finds that instead of the medium's.
 	if( householdA == householdB )
-		SetDefaultWallAttenuation(dB);
+		::SetDefaultWall(wall);
 	else
-		SetWallAttenuation(householdA,householdB,dB);
+		::SetWall(householdA,householdB,wall);
 
 	if( Send(reinterpret_cast<char*>(&codeError),sizeof(codeError)) == SOCKET_ERROR )
 		cerr<<"Error : SetWall : Send : code"<<endl;

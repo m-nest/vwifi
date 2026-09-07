@@ -4,6 +4,9 @@
 #include <assert.h> // assert
 
 #include <netlink/netlink.h> // struct nlmsghdr
+#include <netlink/genl/genl.h> // struct nlattr
+
+#include "hwsim.h" // HWSIM_ATTR_MAX
 
 #include <arpa/inet.h> // struct sockaddr_in
 #include <sys/socket.h> // AF_VSOCK / AF_INET
@@ -27,11 +30,11 @@ using namespace std;
 // 0 dB by default, which is the medium every existing scenario already runs
 // against : one room, everybody hearing everybody. A household only starts
 // costing anything once somebody sets a wall.
-static int DefaultWallAttenuation=0;
+static CWall DefaultWall;
 
 // Keyed with the lower household first, so one entry serves both directions --
 // a wall is not one-way.
-static map< pair<u32,u32>, int > WallAttenuations;
+static map< pair<u32,u32>, CWall > Walls;
 
 static pair<u32,u32> WallKey(u32 householdA, u32 householdB)
 {
@@ -41,40 +44,40 @@ static pair<u32,u32> WallKey(u32 householdA, u32 householdB)
 	return make_pair(householdB,householdA);
 }
 
-void SetDefaultWallAttenuation(int dB)
+void SetDefaultWall(const CWall& wall)
 {
-	DefaultWallAttenuation=dB;
+	DefaultWall=wall;
 }
 
-int GetDefaultWallAttenuation()
+CWall GetDefaultWall()
 {
-	return DefaultWallAttenuation;
+	return DefaultWall;
 }
 
-void SetWallAttenuation(u32 householdA, u32 householdB, int dB)
+void SetWall(u32 householdA, u32 householdB, const CWall& wall)
 {
 	if( householdA == householdB )
 		return;
 
-	WallAttenuations[WallKey(householdA,householdB)]=dB;
+	Walls[WallKey(householdA,householdB)]=wall;
 }
 
-int WallAttenuationBetween(u32 householdA, u32 householdB)
+int WallAttenuationBetween(u32 householdA, u32 householdB, TFrequency frequencyMHz)
 {
 	if( householdA == householdB )
 		return 0;
 
-	map< pair<u32,u32>, int >::const_iterator it=WallAttenuations.find(WallKey(householdA,householdB));
-	if( it != WallAttenuations.end() )
-		return it->second;
+	map< pair<u32,u32>, CWall >::const_iterator it=Walls.find(WallKey(householdA,householdB));
+	if( it != Walls.end() )
+		return it->second.Loss(frequencyMHz);
 
-	return DefaultWallAttenuation;
+	return DefaultWall.Loss(frequencyMHz);
 }
 
 void ResetWalls()
 {
-	WallAttenuations.clear();
-	DefaultWallAttenuation=0;
+	Walls.clear();
+	DefaultWall=CWall();
 }
 
 CWifiServer::CWifiServer() : CSocketServer ()
@@ -272,6 +275,12 @@ void CWifiServer::SendAllOtherClients(TIndex index, VwifiRadioInfo* radio_info, 
     // every frame; what was missing was any idea of what the receivers were on.
     CChannel txChannel(radio_info->frequency, radio_info->channel_width);
 
+    // Parse the relayed message once. This is the hottest loop in the server --
+    // every frame from every client passes through it -- and it needs two
+    // things out of the message, so walking it twice would be paying twice.
+    struct nlattr* attrs[HWSIM_ATTR_MAX + 1];
+    bool parsed = ParseMessage(reinterpret_cast<struct nlmsghdr*>(const_cast<char*>(data)), attrs);
+
     // The 802.11 frame inside the netlink envelope. Its length is what the
     // medium is occupied for, and its first byte is what says whether it is a
     // beacon. A message carrying no frame is not a transmission -- it costs no
@@ -279,8 +288,7 @@ void CWifiServer::SendAllOtherClients(TIndex index, VwifiRadioInfo* radio_info, 
     // client's own dispatcher is what decides what to do with it.
     const char* frame = NULL;
     u32 sizeOfFrame = 0;
-    bool hasFrame = GetFrameBody(reinterpret_cast<struct nlmsghdr*>(const_cast<char*>(data)),
-                                 frame, sizeOfFrame);
+    bool hasFrame = parsed && GetFrameBodyFrom(attrs, frame, sizeOfFrame);
 
     // Beacons and probe responses together : see FrameIsBssPresence().
     bool isPresence = hasFrame && FrameIsBssPresence(frame, sizeOfFrame);
@@ -288,12 +296,11 @@ void CWifiServer::SendAllOtherClients(TIndex index, VwifiRadioInfo* radio_info, 
 
     u32 airtimeUs = hasFrame ? FrameAirtimeUs(sizeOfFrame, txChannel) : 0;
 
-    // Only these need their transmitter resolved, and they are a handful of
-    // frames a second per BSS -- so the parse is paid where it is cheap rather
-    // than on every data frame that goes past.
+    // Only these need their transmitter resolved, and the message is already
+    // parsed, so this is now just an attribute lookup.
     string transmitter;
     if (isPresence)
-        transmitter = GetTransmitter(reinterpret_cast<struct nlmsghdr*>(const_cast<char*>(data)));
+        transmitter = GetTransmitterFrom(attrs);
 
     if (airtimeUs)
         source.AccountOwnTransmission(*radio_info, airtimeUs);
@@ -328,7 +335,8 @@ void CWifiServer::SendAllOtherClients(TIndex index, VwifiRadioInfo* radio_info, 
         destination_info.tx_power = BoundedPower(
                 destination_info.tx_power
                 - Attenuation(coo.DistanceWith(destination), destination_info.frequency)
-                - WallAttenuationBetween(source.GetHousehold(), destination.GetHousehold()));
+                - WallAttenuationBetween(source.GetHousehold(), destination.GetHousehold(),
+                                         txChannel.Centre));
 
         if (CanLostPackets
             && PacketIsLost(destination_info.tx_power,

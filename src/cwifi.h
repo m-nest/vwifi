@@ -58,6 +58,19 @@ class CWifi
 		// untouched. body points into nlh and is valid for as long as it is.
 		bool GetFrameBody(struct nlmsghdr* nlh, const char*& body, u32& sizeOfBody);
 
+		// Parses one relayed message once, so that a caller needing more than
+		// one attribute out of it does not walk it again per attribute. The
+		// forwarding path needs both the frame and, for a beacon, the
+		// transmitter, and it is the hottest loop in the server.
+		//
+		// attrs must have HWSIM_ATTR_MAX + 1 entries. Returns false when the
+		// message does not parse, in which case attrs is not to be read.
+		bool ParseMessage(struct nlmsghdr* nlh, struct nlattr** attrs);
+
+		// The same two accessors, against an already-parsed message.
+		bool GetFrameBodyFrom(struct nlattr* const* attrs, const char*& body, u32& sizeOfBody);
+		std::string GetTransmitterFrom(struct nlattr* const* attrs);
+
 		ssize_t SendLinkStateWithSocket(CSocket* socket, TDescriptor descriptor, bool up);
 
 		// Tell one client to stop, or resume, fabricating HWSIM_TX_STAT_ACK for

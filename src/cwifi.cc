@@ -188,13 +188,13 @@ int CWifi::Attenuation(TDistance distance, TFrequency frequency)
 	return ConstanteC+20*(log10(frequency)-3)+20*(log10(distance)-3);
 }
 
-std::string CWifi::GetTransmitter(struct nlmsghdr* nlh)
+bool CWifi::ParseMessage(struct nlmsghdr* nlh, struct nlattr** attrs)
 {
-	struct nlattr *attrs[HWSIM_ATTR_MAX + 1];
+	return ( genlmsg_parse(nlh, 0, attrs, HWSIM_ATTR_MAX, NULL) == 0 );
+}
 
-	if( genlmsg_parse(nlh, 0, attrs, HWSIM_ATTR_MAX, NULL) )
-		return std::string();
-
+std::string CWifi::GetTransmitterFrom(struct nlattr* const* attrs)
+{
 	if( ! attrs[HWSIM_ATTR_ADDR_TRANSMITTER] )
 		return std::string();
 
@@ -204,13 +204,18 @@ std::string CWifi::GetTransmitter(struct nlmsghdr* nlh)
 	return VwifiMacToString(reinterpret_cast<const TByte*>(nla_data(attrs[HWSIM_ATTR_ADDR_TRANSMITTER])));
 }
 
-bool CWifi::GetFrameBody(struct nlmsghdr* nlh, const char*& body, u32& sizeOfBody)
+std::string CWifi::GetTransmitter(struct nlmsghdr* nlh)
 {
 	struct nlattr *attrs[HWSIM_ATTR_MAX + 1];
 
-	if( genlmsg_parse(nlh, 0, attrs, HWSIM_ATTR_MAX, NULL) )
-		return false;
+	if( ! ParseMessage(nlh,attrs) )
+		return std::string();
 
+	return GetTransmitterFrom(attrs);
+}
+
+bool CWifi::GetFrameBodyFrom(struct nlattr* const* attrs, const char*& body, u32& sizeOfBody)
+{
 	if( ! attrs[HWSIM_ATTR_FRAME] )
 		return false;
 
@@ -222,6 +227,16 @@ bool CWifi::GetFrameBody(struct nlmsghdr* nlh, const char*& body, u32& sizeOfBod
 	sizeOfBody=static_cast<u32>(length);
 
 	return true;
+}
+
+bool CWifi::GetFrameBody(struct nlmsghdr* nlh, const char*& body, u32& sizeOfBody)
+{
+	struct nlattr *attrs[HWSIM_ATTR_MAX + 1];
+
+	if( ! ParseMessage(nlh,attrs) )
+		return false;
+
+	return GetFrameBodyFrom(attrs,body,sizeOfBody);
 }
 
 ssize_t CWifi::SendLinkStateWithSocket(CSocket* socket, TDescriptor descriptor, bool up)

@@ -1,6 +1,7 @@
 #ifndef _CWIFISERVER_H_
 #define _CWIFISERVER_H_
 
+#include "crf.h" // CWall
 #include "csocketserver.h"
 #include "cinfowifi.h"
 #include "cwifi.h"
@@ -15,12 +16,13 @@ extern bool CanLostPackets;
 // different walls.
 //
 // WallAttenuationBetween() is the only reader. It returns 0 dB within a
-// household -- same room, nothing in the way -- an explicit pairwise value if
-// one has been set, and the default otherwise.
-void SetDefaultWallAttenuation(int dB);
-int  GetDefaultWallAttenuation();
-void SetWallAttenuation(u32 householdA, u32 householdB, int dB);
-int  WallAttenuationBetween(u32 householdA, u32 householdB);
+// household -- same room, nothing in the way -- an explicit pairwise wall if
+// one has been set, and the default otherwise. It takes the frequency because
+// a wall is not one number: see CWall.
+void SetDefaultWall(const CWall& wall);
+CWall GetDefaultWall();
+void SetWall(u32 householdA, u32 householdB, const CWall& wall);
+int  WallAttenuationBetween(u32 householdA, u32 householdB, TFrequency frequencyMHz);
 void ResetWalls();
 
 class CWifiServer : public CSocketServer, public CWifi
