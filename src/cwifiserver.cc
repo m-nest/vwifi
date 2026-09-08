@@ -323,9 +323,25 @@ void CWifiServer::SendAllOtherClients(TIndex index, VwifiRadioInfo* radio_info, 
             destination.AccumulateAirtime(txChannel, airtimeUs, sameHousehold);
 
         // hwsim drops a frame whose centre frequency does not match before it
-        // looks at any signal metadata, so relaying across channels only hands
-        // the far end something to discard.
-        if (!destination.CanReceiveOn(txChannel))
+        // looks at any signal metadata, so relaying across channels normally
+        // only hands the far end something to discard.
+        //
+        // Management frames are the exception, and it is not an optimisation
+        // detail -- it is the difference between a station that can find
+        // another band and one that cannot. A radio's reported channel is its
+        // *operating* channel, refreshed once a second; a scanning station
+        // tunes away from it for a few tens of milliseconds at a time and
+        // never says so. Gating on the reported channel therefore drops every
+        // beacon and probe response from every other band, and an associated
+        // station can only ever discover the band it is already on. Band
+        // steering, roaming and any off-channel scan assertion are impossible
+        // under that, and they fail in the worst way: the station looks like
+        // it simply preferred to stay.
+        //
+        // Relaying them costs a little traffic and nothing in correctness --
+        // hwsim still drops whatever the receiver was not tuned to when it
+        // arrived, which is exactly the filtering a real radio does.
+        if (!isRobust && !destination.CanReceiveOn(txChannel))
             continue;
 
         if (isPresence && !source.AreBeaconsRelayed(transmitter))
