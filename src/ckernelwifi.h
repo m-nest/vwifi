@@ -2,6 +2,7 @@
 #define _CKERNELWIFI_H_
 
 #include <atomic>
+#include <vector>
 #include <string>
 #include <mutex>
 
@@ -205,6 +206,20 @@ class CKernelWifi : public intthread::AsyncTask {
 		// says nothing about the radios that might receive it -- and a radio
 		// that is only listening never sends a frame at all.
 		void send_radio_state();
+
+		// The distinct radios behind this node's interfaces, as hwsim
+		// receiver addresses.
+		//
+		// HWSIM_ATTR_ADDR_RECEIVER names a radio, not an interface, and every
+		// netdev on a radio reports that same address -- so walking the
+		// interface list and injecting once per entry hands one radio the same
+		// frame once for each BSS it happens to carry. mac80211 then delivers
+		// every copy: hostapd logs one association four to six times over and
+		// answers each, and a station's EAPOL exchange collapses into
+		// "Multiple EAP reauth attempts without 4-way handshake completion".
+		// It also multiplies the netlink traffic by the same factor, and that
+		// factor grows with every radio and every BSS added.
+		std::vector<struct ether_addr> radio_receivers();
 
 		// Hand the driver the channel survey the server has measured, with
 		// HWSIM_CMD_SET_SURVEY. Only a patched mac80211_hwsim has that command:

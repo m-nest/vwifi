@@ -276,14 +276,12 @@ int CKernelWifi::process_messages(struct nl_msg *msg)
 
 	int rate_idx = 7; // number of attempts
 
-	const auto& inets = _list_winterfaces.list_devices();
-	for (const auto& inet : inets)
-	{
-		struct ether_addr macdsthwsim = inet.getMachwsim();
-		if( memcmp(&macsrchwsim,&macdsthwsim,sizeof(struct ether_addr)) ) // if( macsrchwsim != macdsthwsim )
+	// Likewise once per radio. The transmitting radio is skipped -- it does
+	// not receive its own transmission -- which is the only reason this loop
+	// needs the source address at all.
+	for (auto& macdsthwsim : radio_receivers())
+		if( memcmp(&macsrchwsim,&macdsthwsim,sizeof(struct ether_addr)) )
 			send_cloned_frame_msg(&macdsthwsim, data, data_len, rate_idx, radio_info.tx_power, radio_info.frequency);
-	}
-	delete &inets;
 	// <------------------------
 
 	return 0 ;
@@ -644,15 +642,9 @@ void CKernelWifi::recv_from_server(){
 	std::cout << "frame dst: ";  cout_mac_address(&framedst);std::cout<<std::endl ;
 #endif
 
-	const auto& inets = _list_winterfaces.list_devices();
-
-	for (const auto& inet : inets)
-	{
-		struct ether_addr macdsthwsim = inet.getMachwsim();
-
+	// Once per radio, not once per interface: see radio_receivers().
+	for (auto& macdsthwsim : radio_receivers())
 		send_cloned_frame_msg(&macdsthwsim, data, data_len, rate_idx, signal, freq);
-	}
-	delete &inets;
 }
 
 void  CKernelWifi::monitor_hwsim_loop()
@@ -876,6 +868,31 @@ int CKernelWifi::set_survey(const VwifiSurveyEntry& entry)
 	}
 
 	return 1;
+}
+
+std::vector<struct ether_addr> CKernelWifi::radio_receivers()
+{
+	std::vector<struct ether_addr> receivers;
+
+	const auto& inets = _list_winterfaces.list_devices();
+	for (const auto& inet : inets)
+	{
+		struct ether_addr addr = inet.getMachwsim();
+
+		bool seen=false;
+		for (const auto& known : receivers)
+			if (memcmp(&known, &addr, sizeof(addr)) == 0)
+			{
+				seen=true;
+				break;
+			}
+
+		if (!seen)
+			receivers.push_back(addr);
+	}
+	delete &inets;
+
+	return receivers;
 }
 
 void CKernelWifi::send_radio_state()
