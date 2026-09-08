@@ -38,6 +38,9 @@ const u8 VWIFI_CMD_RADIO_STATE=241;
 // of them drops the message rather than misreading it as a frame.
 const u8 VWIFI_CMD_ACK_STATE=242;
 
+// And 243 for the survey the server pushes down to a client.
+const u8 VWIFI_CMD_SURVEY=243;
+
 struct VwifiLinkState
 {
 	struct nlmsghdr   nlh;
@@ -62,6 +65,73 @@ struct VwifiRadioStateHeader
 	struct genlmsghdr gnlh;
 	u32               count;
 };
+
+struct VwifiSurveyHeader
+{
+	struct nlmsghdr   nlh;
+	struct genlmsghdr gnlh;
+	u32               count;
+};
+
+ssize_t VwifiSurveySize(u32 numberOfEntries)
+{
+	return static_cast<ssize_t>( sizeof(struct VwifiSurveyHeader)
+			+ numberOfEntries*sizeof(struct VwifiSurveyEntry) );
+}
+
+ssize_t VwifiWriteSurvey(char* buffer, ssize_t sizeOfBuffer,
+		const VwifiSurveyEntry* entries, u32 numberOfEntries)
+{
+	if( buffer == NULL || entries == NULL )
+		return 0;
+
+	if( numberOfEntries == 0 || numberOfEntries > VWIFI_MAX_RADIOS_PER_CLIENT )
+		return 0;
+
+	ssize_t size=VwifiSurveySize(numberOfEntries);
+	if( sizeOfBuffer < size )
+		return 0;
+
+	struct VwifiSurveyHeader header;
+	memset(&header,0,sizeof(header));
+	header.nlh.nlmsg_len=size;
+	header.gnlh.cmd=VWIFI_CMD_SURVEY;
+	header.count=numberOfEntries;
+
+	memcpy(buffer,&header,sizeof(header));
+	memcpy(buffer+sizeof(header),entries,numberOfEntries*sizeof(struct VwifiSurveyEntry));
+
+	return size;
+}
+
+bool VwifiReadSurvey(const char* buffer, ssize_t sizeOfBuffer,
+		VwifiSurveyEntry* entries, u32& numberOfEntries)
+{
+	numberOfEntries=0;
+
+	if( buffer == NULL || entries == NULL )
+		return false;
+
+	if( sizeOfBuffer < static_cast<ssize_t>(sizeof(struct VwifiSurveyHeader)) )
+		return false;
+
+	struct VwifiSurveyHeader header;
+	memcpy(&header,buffer,sizeof(header));
+
+	if( header.gnlh.cmd != VWIFI_CMD_SURVEY )
+		return false;
+
+	if( header.count == 0 || header.count > VWIFI_MAX_RADIOS_PER_CLIENT )
+		return false;
+
+	if( sizeOfBuffer < VwifiSurveySize(header.count) )
+		return false;
+
+	memcpy(entries,buffer+sizeof(header),header.count*sizeof(struct VwifiSurveyEntry));
+	numberOfEntries=header.count;
+
+	return true;
+}
 
 ssize_t VwifiRadioStateSize(u32 numberOfRadios)
 {

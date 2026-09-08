@@ -94,6 +94,16 @@ class CWifiServer : public CSocketServer, public CWifi
 		// frame and the caller should go on relaying it.
 		bool LearnRadioState(TIndex index, const char* data, ssize_t sizeOfData);
 
+		// Push each client the channel occupancy its own radios have seen, so
+		// that its driver can report a survey instead of inventing one.
+		//
+		// Called from the main loop rather than on a timer: the loop runs
+		// whenever anything crosses the medium, and a medium with an AP in it
+		// is never quiet for a second. Rates are what gets sent, so a push
+		// that does not happen costs nothing -- the driver keeps applying the
+		// last rate it was given rather than freezing.
+		void PushSurvey(u32 minimumIntervalMs);
+
 		// Sets the household of the client transmitting from mac, or whether
 		// the beacons sent from that one address are relayed, or the noise
 		// floor of one of its radios. Each

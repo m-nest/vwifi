@@ -74,6 +74,25 @@ struct VwifiRadioEntry
     int32_t  tx_power;      // dBm
 };
 
+// One radio's channel occupancy, as the server has measured it, on its way
+// down to the driver.
+//
+// Rates in permille of airtime rather than counters, because the driver
+// accumulates them against jiffies : that is what lets a consumer sampling at
+// any instant see a counter that has moved, without the server having to push
+// on that consumer's schedule. It also means a dropped push costs nothing --
+// the previous rate simply keeps applying.
+struct VwifiSurveyEntry
+{
+    uint32_t radio_id;
+    uint32_t frequency;      // MHz, which channel this describes
+    uint32_t busy_permille;  // all of it: own tx, own rx, everyone else
+    uint32_t rx_permille;    // received from this radio's own household
+    uint32_t ext_permille;   // received from any other household
+    uint32_t tx_permille;
+    int32_t  noise;          // dBm
+};
+
 // How many radios one report may describe. A node with more than this has
 // bigger problems than a truncated report.
 const uint32_t VWIFI_MAX_RADIOS_PER_CLIENT = 16;

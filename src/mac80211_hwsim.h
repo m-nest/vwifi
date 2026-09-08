@@ -101,6 +101,13 @@ enum hwsim_commands {
 	HWSIM_CMD_START_PMSR,
 	HWSIM_CMD_ABORT_PMSR,
 	HWSIM_CMD_REPORT_PMSR,
+	/* Set the channel survey a radio reports. Only a patched
+	 * mac80211_hwsim has this; see
+	 * package/kernel/mac80211/patches/subsys/500-mac80211_hwsim-injectable-channel-survey.patch
+	 * in prplOS. The values are rates in permille of airtime, which the
+	 * driver accumulates against jiffies.
+	 */
+	HWSIM_CMD_SET_SURVEY,
 	__HWSIM_CMD_MAX,
 };
 #define HWSIM_CMD_MAX (_HWSIM_CMD_MAX - 1)
@@ -193,6 +200,12 @@ enum hwsim_attrs {
 	HWSIM_ATTR_PMSR_REQUEST,
 	HWSIM_ATTR_PMSR_RESULT,
 	HWSIM_ATTR_MULTI_RADIO,
+	/* HWSIM_CMD_SET_SURVEY, see above. Occupancy is permille of airtime. */
+	HWSIM_ATTR_SURVEY_NOISE,
+	HWSIM_ATTR_SURVEY_BUSY,
+	HWSIM_ATTR_SURVEY_RX,
+	HWSIM_ATTR_SURVEY_EXT,
+	HWSIM_ATTR_SURVEY_TX,
 	__HWSIM_ATTR_MAX,
 };
 #define HWSIM_ATTR_MAX (__HWSIM_ATTR_MAX - 1)

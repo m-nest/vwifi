@@ -38,6 +38,17 @@ ssize_t VwifiWriteRadioState(char* buffer, ssize_t sizeOfBuffer,
 
 ssize_t VwifiRadioStateSize(u32 numberOfRadios);
 
+// The server's measured channel occupancy, travelling down to a client in
+// place of a frame. Same envelope and same reasoning as the radio-state report
+// going the other way.
+bool VwifiReadSurvey(const char* buffer, ssize_t sizeOfBuffer,
+		VwifiSurveyEntry* entries, u32& numberOfEntries);
+
+ssize_t VwifiWriteSurvey(char* buffer, ssize_t sizeOfBuffer,
+		const VwifiSurveyEntry* entries, u32 numberOfEntries);
+
+ssize_t VwifiSurveySize(u32 numberOfEntries);
+
 class CWifi
 {
 	protected :

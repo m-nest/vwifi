@@ -240,6 +240,14 @@ int vwifi_server()
 
 			ForwardData(false, wifiServer, &wifiServerSPY);
 			ForwardData(true, &wifiServerSPY, wifiServer);
+
+			// Once a second, tell each client what its own radios have been
+			// hearing. This sits in the loop rather than on a timer because
+			// the loop already wakes on every frame, and nothing downstream
+			// can observe faster than this anyway -- pwhm caches air
+			// statistics for 500ms and the data model rate-limits reads to
+			// 1Hz on top of that.
+			wifiServer->PushSurvey(1000);
 		}
 	}
 

@@ -197,10 +197,28 @@ struct CRadioState
 	u64 RxUs;
 	u64 ExtUs;
 
+	// What the counters read when the survey was last pushed down to this
+	// radio's driver, and when that was. A rate is the only thing the driver
+	// can be told -- it accumulates against jiffies on its own -- so what gets
+	// sent is the movement since here, divided by the time since here.
+	u64 LastTxUs;
+	u64 LastRxUs;
+	u64 LastExtUs;
+	u64 LastPushMs;
+
 	CRadioState();
 	explicit CRadioState(u32 radioId);
 
 	u64 BusyUs() const;
+
+	// Occupancy since the last push, in permille of airtime, and re-arms the
+	// baseline. False when too little time has passed to divide by, which is
+	// also what keeps this from pushing faster than anything can observe.
+	//
+	// Airtime is in microseconds and the interval in milliseconds, so the
+	// permille is just one divided by the other.
+	bool TakeRates(u64 nowMs, u32 minimumIntervalMs,
+			u32& busyPermille, u32& rxPermille, u32& extPermille, u32& txPermille);
 };
 
 const int DEFAULT_NOISE_FLOOR_DBM = -92;

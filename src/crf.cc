@@ -251,14 +251,60 @@ const char* WallMaterialNames()
 
 CRadioState::CRadioState()
 	: RadioId(0), Channel(), TxPower(TPower_MAX), NoiseFloor(DEFAULT_NOISE_FLOOR_DBM),
-	  TxUs(0), RxUs(0), ExtUs(0)
+	  TxUs(0), RxUs(0), ExtUs(0),
+	  LastTxUs(0), LastRxUs(0), LastExtUs(0), LastPushMs(0)
 {
 }
 
 CRadioState::CRadioState(u32 radioId)
 	: RadioId(radioId), Channel(), TxPower(TPower_MAX), NoiseFloor(DEFAULT_NOISE_FLOOR_DBM),
-	  TxUs(0), RxUs(0), ExtUs(0)
+	  TxUs(0), RxUs(0), ExtUs(0),
+	  LastTxUs(0), LastRxUs(0), LastExtUs(0), LastPushMs(0)
 {
+}
+
+bool CRadioState::TakeRates(u64 nowMs, u32 minimumIntervalMs,
+		u32& busyPermille, u32& rxPermille, u32& extPermille, u32& txPermille)
+{
+	// First time through there is no baseline to measure against, so start one
+	// and report nothing rather than attributing the whole run to one interval.
+	if( LastPushMs == 0 )
+	{
+		LastPushMs=nowMs;
+		LastTxUs=TxUs;
+		LastRxUs=RxUs;
+		LastExtUs=ExtUs;
+		return false;
+	}
+
+	if( nowMs <= LastPushMs || ( nowMs - LastPushMs ) < minimumIntervalMs )
+		return false;
+
+	u64 intervalMs=nowMs-LastPushMs;
+
+	// The counters only ever grow, but a client that reconnected brings a
+	// fresh radio map with it, so guard the subtraction rather than assume.
+	u64 tx =( TxUs  >= LastTxUs  ? TxUs  - LastTxUs  : 0 );
+	u64 rx =( RxUs  >= LastRxUs  ? RxUs  - LastRxUs  : 0 );
+	u64 ext=( ExtUs >= LastExtUs ? ExtUs - LastExtUs : 0 );
+
+	txPermille =static_cast<u32>( tx  / intervalMs );
+	rxPermille =static_cast<u32>( rx  / intervalMs );
+	extPermille=static_cast<u32>( ext / intervalMs );
+
+	// Everything that made the channel unavailable. There is no non-WiFi
+	// noise source in this medium yet, so the sum is all of it; the driver
+	// clamps anyway, and a future noise model only has to add to this.
+	busyPermille=txPermille+rxPermille+extPermille;
+	if( busyPermille > 1000 )
+		busyPermille=1000;
+
+	LastPushMs=nowMs;
+	LastTxUs=TxUs;
+	LastRxUs=RxUs;
+	LastExtUs=ExtUs;
+
+	return true;
 }
 
 u64 CRadioState::BusyUs() const

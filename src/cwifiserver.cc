@@ -13,6 +13,7 @@
 #include <linux/vm_sockets.h> // struct sockaddr_vm
 
 #include <map>
+#include <time.h> // clock_gettime
 
 #include "crf.h"
 #include "cwifiserver.h"
@@ -365,6 +366,65 @@ bool CWifiServer::LearnRadioState(TIndex index, const char* data, ssize_t sizeOf
 		(*InfoWifis)[index].ReportRadio(radios[r]);
 
 	return true;
+}
+
+void CWifiServer::PushSurvey(u32 minimumIntervalMs)
+{
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC,&now);
+	u64 nowMs=static_cast<u64>(now.tv_sec)*1000 + now.tv_nsec/1000000;
+
+	for (TIndex i = 0; i < GetNumberClient(); i++)
+	{
+		if( ! IsEnable(i) )
+			continue;
+
+		CInfoWifi& infoWifi=(*InfoWifis)[i];
+
+		VwifiSurveyEntry entries[VWIFI_MAX_RADIOS_PER_CLIENT];
+		u32 count=0;
+
+		const map<u32,CRadioState>& radios=infoWifi.GetRadios();
+		for(map<u32,CRadioState>::const_iterator it=radios.begin();
+		    it != radios.end() && count < VWIFI_MAX_RADIOS_PER_CLIENT; ++it)
+		{
+			// A radio with no channel cannot have a survey pushed at it : the
+			// driver keys the override on the channel, and there is nothing
+			// to name.
+			if( ! it->second.Channel.IsKnown() )
+				continue;
+
+			CRadioState& radio=const_cast<CRadioState&>(it->second);
+
+			u32 busy,rx,ext,tx;
+			if( ! radio.TakeRates(nowMs,minimumIntervalMs,busy,rx,ext,tx) )
+				continue;
+
+			entries[count].radio_id=radio.RadioId;
+			entries[count].frequency=radio.Channel.Centre;
+			entries[count].busy_permille=busy;
+			entries[count].rx_permille=rx;
+			entries[count].ext_permille=ext;
+			entries[count].tx_permille=tx;
+			entries[count].noise=radio.NoiseFloor;
+			count++;
+		}
+
+		if( count == 0 )
+			continue;
+
+		char buffer[sizeof(struct nlmsghdr) + sizeof(struct genlmsghdr) + sizeof(u32)
+				+ VWIFI_MAX_RADIOS_PER_CLIENT*sizeof(VwifiSurveyEntry)];
+
+		ssize_t size=VwifiWriteSurvey(buffer,sizeof(buffer),entries,count);
+		if( size <= 0 )
+			continue;
+
+		VwifiRadioInfo radio_info{};
+
+		if( SendSignal((*InfoSockets)[i].GetDescriptor(),&radio_info,buffer,size) < 0 )
+			(*InfoSockets)[i].DisableIt();
+	}
 }
 
 bool CWifiServer::SetHouseholdByMac(const string& mac, u32 household)

@@ -547,6 +547,19 @@ void CKernelWifi::recv_from_server(){
 		return;
 	}
 
+	/* the server's measured channel occupancy, for the driver's survey */
+	{
+		VwifiSurveyEntry entries[VWIFI_MAX_RADIOS_PER_CLIENT];
+		uint32_t count=0;
+		if ( VwifiReadSurvey(Buffer.GetBuffer(), valread, entries, count) )
+		{
+			for(uint32_t e=0; e<count; e++)
+				if( ! set_survey(entries[e]) )
+					break;
+			return;
+		}
+	}
+
 	/* and this to change only whether we keep acknowledging ourselves */
 	bool ack_faking;
 	if ( VwifiReadAckState(Buffer.GetBuffer(), valread, ack_faking) )
@@ -793,6 +806,76 @@ ssize_t CKernelWifi::send_to_server(VwifiRadioInfo* radio_info, const char* buff
 	std::lock_guard<std::mutex> lock(_send_mutex);
 
 	return _SendSignal(radio_info, buffer, sizeOfBuffer);
+}
+
+int CKernelWifi::set_survey(const VwifiSurveyEntry& entry)
+{
+	if( ! _survey_supported )
+		return 0;
+
+	// The driver is addressed by the radio's hwsim address, which is what
+	// every other per-radio command uses. Find the interface on this wiphy to
+	// get it -- the server knows radios by wiphy index and nothing else.
+	struct ether_addr machwsim;
+	bool found=false;
+
+	const auto& inets = _list_winterfaces.list_devices();
+	for (const auto& inet : inets)
+	{
+		if( inet.getWiphyId() == entry.radio_id )
+		{
+			machwsim = inet.getMachwsim();
+			found=true;
+			break;
+		}
+	}
+	delete &inets;
+
+	if( ! found )
+		return 1;
+
+	struct nl_msg *msg = nlmsg_alloc();
+	if( ! msg )
+		return 1;
+
+	if( m_family_id < 0 )
+	{
+		nlmsg_free(msg);
+		return 1;
+	}
+
+	genlmsg_put(msg, NL_AUTO_PID, NL_AUTO_SEQ, m_family_id, 0, NLM_F_REQUEST,
+			HWSIM_CMD_SET_SURVEY, VERSION_NR);
+
+	if( nla_put(msg, HWSIM_ATTR_ADDR_TRANSMITTER, sizeof(struct ether_addr), &machwsim) ||
+	    nla_put_u32(msg, HWSIM_ATTR_FREQ, entry.frequency)                              ||
+	    nla_put_u32(msg, HWSIM_ATTR_SURVEY_BUSY, entry.busy_permille)                   ||
+	    nla_put_u32(msg, HWSIM_ATTR_SURVEY_RX, entry.rx_permille)                       ||
+	    nla_put_u32(msg, HWSIM_ATTR_SURVEY_EXT, entry.ext_permille)                     ||
+	    nla_put_u32(msg, HWSIM_ATTR_SURVEY_TX, entry.tx_permille)                       ||
+	    nla_put_s32(msg, HWSIM_ATTR_SURVEY_NOISE, entry.noise)                          )
+	{
+		nlmsg_free(msg);
+		return 1;
+	}
+
+	int sent=nl_send_auto(_netlink_socket, msg);
+	nlmsg_free(msg);
+
+	if( sent < 0 )
+	{
+		// A driver without the command answers -EOPNOTSUPP, and the send
+		// itself can fail if the family does not carry it at all. Either way
+		// there is no point asking again every second.
+		std::cerr << "channel survey injection unavailable ("
+		          << nl_geterror(sent)
+		          << "), the driver will keep reporting its own"
+		          << std::endl;
+		_survey_supported=false;
+		return 0;
+	}
+
+	return 1;
 }
 
 void CKernelWifi::send_radio_state()

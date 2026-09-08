@@ -206,6 +206,20 @@ class CKernelWifi : public intthread::AsyncTask {
 		// that is only listening never sends a frame at all.
 		void send_radio_state();
 
+		// Hand the driver the channel survey the server has measured, with
+		// HWSIM_CMD_SET_SURVEY. Only a patched mac80211_hwsim has that command:
+		// the stock one exposes seven and none of them writes survey_data[].
+		//
+		// A client whose driver does not know the command says so once and
+		// then stops asking, because the alternative is a rejected netlink
+		// message every second for the life of the run. The client containers
+		// are exactly that case -- they use the host kernel's built-in hwsim,
+		// which cannot be replaced -- so this has to be quiet, not fatal.
+		int set_survey(const VwifiSurveyEntry& entry);
+		void apply_survey(const char* buffer, ssize_t sizeOfBuffer);
+
+		bool _survey_supported { true } ;
+
 		/**
 		*      \brief Send a cloned frame to the kernel space driver.
 		*	This will send a frame to the driver using netlink.
