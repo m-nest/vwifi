@@ -24,6 +24,12 @@ class CCoordinate
 		void SetY(TValue y);
 		void SetZ(TValue z);
 
+		// The class had setters and no getters, so a coordinate could be
+		// written but never read back except by printing it.
+		TValue GetX() const;
+		TValue GetY() const;
+		TValue GetZ() const;
+
 		void Set(TValue x, TValue y);
 		void Set(TValue x, TValue y, TValue z);
 

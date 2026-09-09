@@ -111,9 +111,59 @@ int SetHousehold(int argc, char** argv)
 	return 0;
 }
 
+// "position MAC" reads, "position MAC X Y Z" writes.
+static int GetPosition(const TByte* mac)
+{
+	CSocketClientITCP socket;
+	TOrder order=TORDER_GET_POSITION;
+
+	socket.Init(IP_Ctrl.c_str(),Port_Ctrl);
+
+	if( ! socket.ConnectLoop() )
+	{
+		cerr<<"Error : position : socket.Connect error"<<endl;
+		return 1;
+	}
+
+	if( socket.Send(reinterpret_cast<char*>(&order),sizeof(order)) == SOCKET_ERROR ||
+	    socket.Send(reinterpret_cast<char*>(const_cast<TByte*>(mac)),ETH_ALEN) == SOCKET_ERROR )
+	{
+		cerr<<"Error : position : socket.Send"<<endl;
+		return 1;
+	}
+
+	int codeError;
+	if( socket.Read(reinterpret_cast<char*>(&codeError),sizeof(codeError)) == SOCKET_ERROR )
+	{
+		cerr<<"Error : position : socket.Read : code"<<endl;
+		return 1;
+	}
+
+	if( codeError )
+	{
+		cerr<<"Error : position : no connected Client has transmitted from "
+		    <<VwifiMacToString(const_cast<TByte*>(mac))<<endl;
+		return 1;
+	}
+
+	TValue xyz[3];
+	if( socket.Read(reinterpret_cast<char*>(xyz),sizeof(xyz)) == SOCKET_ERROR )
+	{
+		cerr<<"Error : position : socket.Read : coordinates"<<endl;
+		return 1;
+	}
+
+	socket.Close();
+
+	cout<<VwifiMacToString(const_cast<TByte*>(mac))<<" : position "
+	    <<xyz[0]<<" "<<xyz[1]<<" "<<xyz[2]<<endl;
+
+	return 0;
+}
+
 int SetPosition(int argc, char** argv)
 {
-	if( argc != 5 )
+	if( argc != 2 && argc != 5 )
 	{
 		cerr<<"Error : position : the number of parameter is uncorrect"<<endl;
 		Help();
@@ -126,6 +176,9 @@ int SetPosition(int argc, char** argv)
 		cerr<<"Error : position : \""<<argv[1]<<"\" is not a MAC address"<<endl;
 		return 1;
 	}
+
+	if( argc == 2 )
+		return GetPosition(mac);
 
 	// Coordinates may be negative, so isPositiveInt() is not the check here.
 	TValue xyz[3];
@@ -495,6 +548,8 @@ void Help()
 	cout<<"		  Everything starts in household 0. Two nodes in the same household"<<endl;
 	cout<<"		  hear each other with nothing in the way; between two different ones"<<endl;
 	cout<<"		  the wall below applies."<<endl;
+	cout<<"	position MAC"<<endl;
+	cout<<"		- Report where the Client transmitting from MAC currently is."<<endl;
 	cout<<"	position MAC X Y Z"<<endl;
 	cout<<"		- Move the Client transmitting from MAC to (X,Y,Z), the same"<<endl;
 	cout<<"		  coordinates \"set CID\" uses, addressed by MAC instead."<<endl;

@@ -40,6 +40,8 @@ class CCTRLServer : public CSocketServer, public CSocketServerFunctionITCP
 
 		void SetPosition();
 
+		void GetPosition();
+
 		void SetWall();
 
 		void SetNoiseFloor();

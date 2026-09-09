@@ -473,6 +473,22 @@ bool CWifiServer::SetPositionByMac(const string& mac, TValue x, TValue y, TValue
 	return false;
 }
 
+bool CWifiServer::GetPositionByMac(const string& mac, TValue& x, TValue& y, TValue& z)
+{
+	for (TIndex i = 0; i < GetNumberClient(); i++)
+	{
+		if( ! IsEnable(i) || ! (*InfoWifis)[i].OwnsMac(mac) )
+			continue;
+
+		x=(*InfoWifis)[i].GetX();
+		y=(*InfoWifis)[i].GetY();
+		z=(*InfoWifis)[i].GetZ();
+		return true;
+	}
+
+	return false;
+}
+
 bool CWifiServer::SetBeaconsRelayedByMac(const string& mac, bool relayed)
 {
 	for (TIndex i = 0; i < GetNumberClient(); i++)

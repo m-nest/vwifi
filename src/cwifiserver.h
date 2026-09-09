@@ -122,6 +122,10 @@ class CWifiServer : public CSocketServer, public CWifi
 		// scenario reaches for -- household, noise, beacon, ack, link -- is
 		// addressed the same way, and distance was the one that was not.
 		bool SetPositionByMac(const string& mac, TValue x, TValue y, TValue z);
+
+		// Reads back what SetPositionByMac() set. Same addressing, and the same
+		// false when no connected client has transmitted from that address.
+		bool GetPositionByMac(const string& mac, TValue& x, TValue& y, TValue& z);
 		bool SetBeaconsRelayedByMac(const string& mac, bool relayed);
 		bool SetNoiseFloorByMac(const string& mac, u32 radioId, int noiseFloorDbm);
 
