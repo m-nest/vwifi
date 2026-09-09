@@ -85,6 +85,38 @@ u32 NominalRateKbps(const CChannel& channel);
 u32 FrameAirtimeUs(u32 frameBytes, const CChannel& channel);
 
 // ---------------------------------------------------------------------------
+// Path loss
+// ---------------------------------------------------------------------------
+
+// The distance power loss coefficient N for a residential building, from
+// ITU-R P.1238 Table 2 ("Power loss coefficients, N, for indoor transmission
+// loss calculation"). N is ten times the path loss exponent, so N=28 is n=2.8.
+//
+// The Residential column is sparse -- the Recommendation gives 28 at 2.4 GHz
+// and 30 at 5.2 GHz and nothing above that -- so this interpolates between
+// those two anchors and extends the same slope past 5.2 GHz. The 6 GHz value
+// that falls out, about 30.7, is an extrapolation and not a measurement: P.1238
+// has no residential entry for the band. It is the right direction and about
+// the right size, which is what the rest of this file is for.
+double ResidentialPathLossCoefficient(TFrequency frequencyMHz);
+
+// Indoor path loss in dB over `distanceM` metres, ITU-R P.1238:
+//
+//     L = 20*log10(f_MHz) + N*log10(d_m) - 28
+//
+// Free space is the special case N=20. Using the residential N instead is what
+// makes distance separate the bands rather than merely weaken them: the
+// frequency term above is a constant offset, identical at one metre and at
+// fifty, so under free space 6 GHz is a fixed 8 dB behind 2.4 GHz and no
+// distance ever changes which band a station prefers. Indoors the exponent
+// itself rises with frequency, so the gap widens as a station walks away --
+// which is the whole reason 6 GHz is a room-sized band and 2.4 GHz is not.
+//
+// Defined for d >= 1 m; shorter distances are treated as 1 m, where the model
+// agrees with free space to within half a dB.
+int IndoorPathLossDb(TDistance distanceM, TFrequency frequencyMHz);
+
+// ---------------------------------------------------------------------------
 // Link budget
 // ---------------------------------------------------------------------------
 

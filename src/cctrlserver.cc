@@ -280,6 +280,25 @@ void CCTRLServer::SetHousehold()
 		cerr<<"Error : SetHousehold : Send : code"<<endl;
 }
 
+void CCTRLServer::SetPosition()
+{
+	TByte mac[ETH_ALEN];
+
+	if( Read(reinterpret_cast<char*>(mac), sizeof(mac)) == SOCKET_ERROR )
+		return;
+
+	TValue xyz[3];
+
+	if( Read(reinterpret_cast<char*>(xyz), sizeof(xyz)) == SOCKET_ERROR )
+		return;
+
+	int codeError = WifiServerITCP->SetPositionByMac(VwifiMacToString(mac),
+			xyz[0], xyz[1], xyz[2]) ? 0 : -1;
+
+	if( Send(reinterpret_cast<char*>(&codeError),sizeof(codeError)) == SOCKET_ERROR )
+		cerr<<"Error : SetPosition : Send : code"<<endl;
+}
+
 void CCTRLServer::SetWall()
 {
 	u32 householdA;
@@ -637,6 +656,10 @@ void CCTRLServer::ReceiveOrder()
 
 			case TORDER_HOUSEHOLD :
 				SetHousehold();
+				break;
+
+			case TORDER_POSITION :
+				SetPosition();
 				break;
 
 			case TORDER_WALL :

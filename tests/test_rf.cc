@@ -23,6 +23,20 @@ static int Failures=0;
 	}                                                                         \
 } while(0)
 
+// Same, for a value that is a calculation rather than a decision: the model is
+// allowed to move by a rounding step without failing a test.
+#define CHECK_NEAR(what,expected,tolerance) do {                              \
+	double got_=(what);                                                       \
+	double want_=(expected);                                                  \
+	double slack_=(tolerance);                                                \
+	double diff_=got_>want_ ? got_-want_ : want_-got_;                        \
+	if( diff_ > slack_ ) {                                                    \
+		fprintf(stderr,"FAIL %s:%d : %s = %g, expected %g +/- %g\n",          \
+		        __FILE__,__LINE__,#what,got_,want_,slack_);                   \
+		Failures++;                                                           \
+	}                                                                         \
+} while(0)
+
 // 2.4 GHz channels 1, 3 and 11; 5 GHz channel 36.
 static const CChannel CH1(2412,20);
 static const CChannel CH3(2422,20);
@@ -84,6 +98,54 @@ static void TestAirtime()
 	// airtime consequence.
 	CHECK( FrameAirtimeUs(1500,CH36) < FrameAirtimeUs(1500,CH1) );
 	CHECK( FrameAirtimeUs(1500,CH36_80) < FrameAirtimeUs(1500,CH36) );
+}
+
+static void TestPathLoss()
+{
+	// ITU-R P.1238 Table 2, Residential: the two anchors the model is built on.
+	CHECK_NEAR(ResidentialPathLossCoefficient(2400), 28.0, 0.01);
+	CHECK_NEAR(ResidentialPathLossCoefficient(5200), 30.0, 0.01);
+
+	// Between them it interpolates, above them it extends the same slope.
+	// 6135 MHz is an extrapolation, flagged as such in crf.h.
+	CHECK(ResidentialPathLossCoefficient(5180) > 28.0);
+	CHECK(ResidentialPathLossCoefficient(5180) < 30.0);
+	CHECK(ResidentialPathLossCoefficient(6135) > 30.0);
+
+	// Never below free space: a house does not focus radio.
+	CHECK(ResidentialPathLossCoefficient(2412) >= 20.0);
+	CHECK(ResidentialPathLossCoefficient(900)  >= 20.0);
+
+	// At one metre the model agrees with free space to within a dB, which is
+	// what makes it safe to use from zero distance upwards.
+	//   FSPL(1 m, 2412 MHz) = 20log10(2412) + 20log10(1) - 27.55 = 40.1 dB
+	CHECK_NEAR(IndoorPathLossDb(1.0, 2412), 40, 1);
+
+	// Below a metre it clamps rather than going negative and handing out gain.
+	CHECK(IndoorPathLossDb(0.01, 2412) == IndoorPathLossDb(1.0, 2412));
+
+	// Monotonic in both arguments.
+	CHECK(IndoorPathLossDb(10.0, 2412) > IndoorPathLossDb(1.0, 2412));
+	CHECK(IndoorPathLossDb(10.0, 6135) > IndoorPathLossDb(10.0, 2412));
+
+	// The property the whole change exists for: the gap between a low band and
+	// a high one widens with distance. Under free space it is constant, and a
+	// station could never be made to prefer 2.4 GHz by walking away from the AP.
+	int gapNear=IndoorPathLossDb(2.0,  6135) - IndoorPathLossDb(2.0,  2412);
+	int gapFar =IndoorPathLossDb(30.0, 6135) - IndoorPathLossDb(30.0, 2412);
+	CHECK(gapFar > gapNear + 2);
+
+	// Same shape for 5 GHz, and 6 GHz always falls off at least as fast as 5.
+	int gap5Near=IndoorPathLossDb(2.0,  5180) - IndoorPathLossDb(2.0,  2412);
+	int gap5Far =IndoorPathLossDb(30.0, 5180) - IndoorPathLossDb(30.0, 2412);
+	CHECK(gap5Far > gap5Near);
+	CHECK(gapFar >= gap5Far);
+
+	// A sanity anchor against the Recommendation, computed by hand:
+	//   2412 MHz, 10 m: 20log10(2412) + 28*log10(10) - 28 = 67.6 + 28 - 28 = 67.6
+	CHECK_NEAR(IndoorPathLossDb(10.0, 2412), 68, 1);
+	//   5180 MHz, 10 m: 20log10(5180) + 29.99*1 - 28      = 74.3 + 30.0 - 28 = 76.3
+	CHECK_NEAR(IndoorPathLossDb(10.0, 5180), 76, 1);
 }
 
 static void TestNoise()
@@ -297,6 +359,7 @@ int main()
 {
 	TestSpectrum();
 	TestAirtime();
+	TestPathLoss();
 	TestNoise();
 	TestErrorCurve();
 	TestFrameClassification();

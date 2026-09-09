@@ -20,7 +20,8 @@ typedef u32 TCID;
 // vwifi-ctrl and vwifi-server
 enum TOrder {
 	TORDER_NO, TORDER_LIST, TORDER_SHOW, TORDER_CHANGE_COORDINATE, TORDER_SETNAME, TORDER_PACKET_LOSS, TORDER_STATUS, TORDER_DISTANCE_BETWEEN_CID, TORDER_SET_SCALE, TORDER_CLOSE_ALL_CLIENT, TORDER_LINK,
-	TORDER_HOUSEHOLD, TORDER_WALL, TORDER_NOISE, TORDER_BEACON, TORDER_RADIOS, TORDER_ACK
+	TORDER_HOUSEHOLD, TORDER_WALL, TORDER_NOISE, TORDER_BEACON, TORDER_RADIOS, TORDER_ACK,
+	TORDER_POSITION
 };
 
 // int
@@ -39,7 +40,19 @@ typedef u16 TPort;
 
 // char
 typedef s8 TPower; // empirical observed values with int : [-123,20]
-const TPower TPower_MAX=-10; // dBm is always negative. -10 is an empirical value
+// The strongest signal any receiver in this medium is allowed to report.
+//
+// -10 dBm was the original value and is not a level a domestic radio produces:
+// it is roughly what you would measure with the antennas touching, close enough
+// to a receiver's damage threshold that no real deployment sees it. Every node
+// in the default topology shares one coordinate, so the distance term is zero
+// and every link lands on this ceiling -- which made the ceiling, rather than
+// any transmit power or path loss, the number the whole medium reported.
+//
+// -30 dBm is what a station a metre or two from a home gateway actually sees,
+// and it leaves the useful range of the model -- roughly -30 down to the -92
+// noise floor -- spread across the distances and materials a house contains.
+const TPower TPower_MAX=-30;
 const TPower TPower_MIN=INT8_MIN;
 
 // double

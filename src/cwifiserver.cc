@@ -458,6 +458,21 @@ bool CWifiServer::SetHouseholdByMac(const string& mac, u32 household)
 	return false;
 }
 
+bool CWifiServer::SetPositionByMac(const string& mac, TValue x, TValue y, TValue z)
+{
+	for (TIndex i = 0; i < GetNumberClient(); i++)
+	{
+		if( ! IsEnable(i) || ! (*InfoWifis)[i].OwnsMac(mac) )
+			continue;
+
+		(*InfoWifis)[i].Set(x,y,z);
+		cout<<"position : "; ShowInfoWifi(i); cout<<endl;
+		return true;
+	}
+
+	return false;
+}
+
 bool CWifiServer::SetBeaconsRelayedByMac(const string& mac, bool relayed)
 {
 	for (TIndex i = 0; i < GetNumberClient(); i++)

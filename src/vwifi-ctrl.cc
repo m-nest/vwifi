@@ -111,6 +111,45 @@ int SetHousehold(int argc, char** argv)
 	return 0;
 }
 
+int SetPosition(int argc, char** argv)
+{
+	if( argc != 5 )
+	{
+		cerr<<"Error : position : the number of parameter is uncorrect"<<endl;
+		Help();
+		return 1;
+	}
+
+	TByte mac[ETH_ALEN];
+	if( ParseAddress(argv[1],mac) != ETH_ALEN )
+	{
+		cerr<<"Error : position : \""<<argv[1]<<"\" is not a MAC address"<<endl;
+		return 1;
+	}
+
+	// Coordinates may be negative, so isPositiveInt() is not the check here.
+	TValue xyz[3];
+	for(int i=0; i<3; i++)
+	{
+		try
+		{
+			xyz[i]=static_cast<TValue>(stoi(argv[2+i]));
+		}
+		catch(...)
+		{
+			cerr<<"Error : position : \""<<argv[2+i]<<"\" is not a coordinate"<<endl;
+			return 1;
+		}
+	}
+
+	if( SendOrderWithMacAndValue("position",TORDER_POSITION,mac,xyz,sizeof(xyz)) )
+		return 1;
+
+	cout<<VwifiMacToString(mac)<<" : position "<<xyz[0]<<" "<<xyz[1]<<" "<<xyz[2]<<endl;
+
+	return 0;
+}
+
 int SetWall(int argc, char** argv)
 {
 	if( argc != 4 && argc != 5 )
@@ -456,6 +495,13 @@ void Help()
 	cout<<"		  Everything starts in household 0. Two nodes in the same household"<<endl;
 	cout<<"		  hear each other with nothing in the way; between two different ones"<<endl;
 	cout<<"		  the wall below applies."<<endl;
+	cout<<"	position MAC X Y Z"<<endl;
+	cout<<"		- Move the Client transmitting from MAC to (X,Y,Z), the same"<<endl;
+	cout<<"		  coordinates \"set CID\" uses, addressed by MAC instead."<<endl;
+	cout<<"		- Distance is the other way to separate the bands, and unlike a"<<endl;
+	cout<<"		  wall it needs no second household: indoor path loss rises faster"<<endl;
+	cout<<"		  with frequency (ITU-R P.1238 residential), so walking a station"<<endl;
+	cout<<"		  away costs 6GHz more than 5GHz and 5GHz more than 2.4GHz."<<endl;
 	cout<<"	wall N M DB|MATERIAL [COUNT]"<<endl;
 	cout<<"		- Put a wall between household N and household M"<<endl;
 	cout<<"		- DB : a loss in dB that does not vary with frequency"<<endl;
@@ -1336,6 +1382,9 @@ int main(int argc , char *argv[])
 
 	if( ! strcasecmp(param_cmd[0],"household") )
 		return SetHousehold(nbr_param_cmd, param_cmd.get());
+
+	if( ! strcasecmp(param_cmd[0],"position") )
+		return SetPosition(nbr_param_cmd, param_cmd.get());
 
 	if( ! strcasecmp(param_cmd[0],"wall") )
 		return SetWall(nbr_param_cmd, param_cmd.get());

@@ -253,9 +253,21 @@ int CWifi::Attenuation(TDistance distance, TFrequency frequency)
 	if( distance == 0 )
 		return 0;
 
-	//     ConstanteC+20*log10(frequency/1000)+20*log10(distance/1000);
-	//     ConstanteC+20*(log10(frequency)-log10(1000))+20*(log10(distance)-log10(1000))
-	return ConstanteC+20*(log10(frequency)-3)+20*(log10(distance)-3);
+	// Indoor residential rather than free space -- see IndoorPathLossDb().
+	//
+	// The formula this replaced was
+	//
+	//     ConstanteC+20*(log10(frequency)-3)+20*(log10(distance)-3)
+	//
+	// which is free-space loss with f in MHz and d in metres (the two -3s and
+	// the 92.45 reduce to the familiar 20log10(f)+20log10(d)-27.55). It is right
+	// for an anechoic chamber and wrong for a flat, and wrong in a way that
+	// matters here: with a fixed exponent of 2 for every band, the gap between
+	// 2.4 and 6 GHz is a constant 8 dB at every distance, so no amount of
+	// walking away ever makes a station prefer the lower band. Every household
+	// this medium simulates is indoors, so the exponent should be the indoor
+	// one, and it should rise with frequency the way P.1238 measures it doing.
+	return IndoorPathLossDb(distance, frequency);
 }
 
 bool CWifi::ParseMessage(struct nlmsghdr* nlh, struct nlattr** attrs)

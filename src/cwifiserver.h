@@ -111,6 +111,17 @@ class CWifiServer : public CSocketServer, public CWifi
 		// that address -- the same contract, and the same reason, as
 		// SetLinkStateByMac().
 		bool SetHouseholdByMac(const string& mac, u32 household);
+
+		// Moves the client transmitting from mac to (x,y,z), in the same
+		// coordinates "set CID" uses.
+		//
+		// By MAC rather than by CID because a scenario knows a station by its
+		// address and nothing else: the CID is assigned by this server when the
+		// client connects, is not derivable from anything on the client side,
+		// and is not reported alongside the MAC anywhere. Every other lever a
+		// scenario reaches for -- household, noise, beacon, ack, link -- is
+		// addressed the same way, and distance was the one that was not.
+		bool SetPositionByMac(const string& mac, TValue x, TValue y, TValue z);
 		bool SetBeaconsRelayedByMac(const string& mac, bool relayed);
 		bool SetNoiseFloorByMac(const string& mac, u32 radioId, int noiseFloorDbm);
 

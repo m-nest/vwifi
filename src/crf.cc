@@ -108,6 +108,56 @@ u32 FrameAirtimeUs(u32 frameBytes, const CChannel& channel)
 }
 
 // ---------------------------------------------------------------------------
+// Path loss
+// ---------------------------------------------------------------------------
+
+// ITU-R P.1238 Table 2, Residential: N=28 at 2.4 GHz, N=30 at 5.2 GHz.
+static const double P1238_LOW_GHZ  = 2.4;
+static const double P1238_LOW_N    = 28.0;
+static const double P1238_HIGH_GHZ = 5.2;
+static const double P1238_HIGH_N   = 30.0;
+
+// The Recommendation's own constant in L = 20*log10(f) + N*log10(d) - 28.
+static const double P1238_OFFSET = 28.0;
+
+double ResidentialPathLossCoefficient(TFrequency frequencyMHz)
+{
+	double frequencyGHz=static_cast<double>(frequencyMHz)/1000.0;
+
+	double slope=(P1238_HIGH_N-P1238_LOW_N)/(P1238_HIGH_GHZ-P1238_LOW_GHZ);
+	double n=P1238_LOW_N + slope*(frequencyGHz-P1238_LOW_GHZ);
+
+	// Below 2.4 GHz there is nothing here to model -- no band this medium
+	// carries sits there -- and letting the line run down would eventually
+	// produce an exponent under free space, which is not a thing a house does.
+	if( n < P1238_LOW_N )
+		return P1238_LOW_N;
+
+	return n;
+}
+
+int IndoorPathLossDb(TDistance distanceM, TFrequency frequencyMHz)
+{
+	if( frequencyMHz == 0 )
+		return 0;
+
+	// P.1238 is stated for d >= 1 m. Below that the log term goes negative and
+	// then unbounded, which would hand a co-located pair a *gain*.
+	double d=distanceM < 1.0 ? 1.0 : distanceM;
+
+	double n=ResidentialPathLossCoefficient(frequencyMHz);
+
+	double loss=20.0*log10(static_cast<double>(frequencyMHz))
+	          + n*log10(d)
+	          - P1238_OFFSET;
+
+	if( loss < 0.0 )
+		return 0;
+
+	return static_cast<int>(loss+0.5);
+}
+
+// ---------------------------------------------------------------------------
 // Link budget
 // ---------------------------------------------------------------------------
 

@@ -38,6 +38,8 @@ class CCTRLServer : public CSocketServer, public CSocketServerFunctionITCP
 
 		void SetHousehold();
 
+		void SetPosition();
+
 		void SetWall();
 
 		void SetNoiseFloor();
