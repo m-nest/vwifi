@@ -388,6 +388,27 @@ void CCTRLServer::SetNoiseFloor()
 		cerr<<"Error : SetNoiseFloor : Send : code"<<endl;
 }
 
+void CCTRLServer::SetTxPower()
+{
+	TCID cid;
+	u32 radioId;
+	int txPower;
+
+	if( Read(reinterpret_cast<char*>(&cid), sizeof(cid)) == SOCKET_ERROR )
+		return;
+
+	if( Read(reinterpret_cast<char*>(&radioId), sizeof(radioId)) == SOCKET_ERROR )
+		return;
+
+	if( Read(reinterpret_cast<char*>(&txPower), sizeof(txPower)) == SOCKET_ERROR )
+		return;
+
+	int codeError = WifiServerITCP->SetTxPowerByCid(cid, radioId, txPower) ? 0 : -1;
+
+	if( Send(reinterpret_cast<char*>(&codeError),sizeof(codeError)) == SOCKET_ERROR )
+		cerr<<"Error : SetTxPower : Send : code"<<endl;
+}
+
 void CCTRLServer::SetBeaconState()
 {
 	TByte mac[ETH_ALEN];
@@ -695,6 +716,10 @@ void CCTRLServer::ReceiveOrder()
 
 			case TORDER_NOISE :
 				SetNoiseFloor();
+				break;
+
+			case TORDER_TXPOWER :
+				SetTxPower();
 				break;
 
 			case TORDER_BEACON :

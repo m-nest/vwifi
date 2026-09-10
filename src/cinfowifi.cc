@@ -105,12 +105,43 @@ void CInfoWifi::ReportRadio(const VwifiRadioEntry& entry)
 	if( it == Radios.end() )
 		it=Radios.insert(make_pair(entry.radio_id,CRadioState(entry.radio_id))).first;
 
-	// Channel and power are replaced; the airtime counters and the noise floor
-	// are not. The counters have to survive because every consumer diffs them,
-	// and the floor because it is set from vwifi-ctrl and the node reporting
-	// its channel is not the node retracting that.
+	// The channel is replaced; the airtime counters, the noise floor and a
+	// pinned transmit power are not. The counters have to survive because every
+	// consumer diffs them, and the other two because they are set from
+	// vwifi-ctrl and the node reporting its channel is not the node retracting
+	// that.
 	it->second.Channel=CChannel(entry.frequency,entry.channel_width);
-	it->second.TxPower=static_cast<TPower>(entry.tx_power);
+
+	if( ! it->second.TxPowerPinned )
+		it->second.TxPower=static_cast<TPower>(entry.tx_power);
+}
+
+u32 CInfoWifi::SetTxPower(u32 radioId, int txPowerDbm)
+{
+	u32 touched=0;
+
+	for(map<u32,CRadioState>::iterator it=Radios.begin(); it != Radios.end(); ++it)
+	{
+		if( radioId != RADIO_ID_ALL && it->first != radioId )
+			continue;
+
+		it->second.TxPower=static_cast<TPower>(txPowerDbm);
+		it->second.TxPowerPinned=true;
+		touched++;
+	}
+
+	return touched;
+}
+
+bool CInfoWifi::PinnedTxPower(u32 radioId, TPower& out) const
+{
+	map<u32,CRadioState>::const_iterator it=Radios.find(radioId);
+
+	if( it == Radios.end() || ! it->second.TxPowerPinned )
+		return false;
+
+	out=it->second.TxPower;
+	return true;
 }
 
 CRadioState* CInfoWifi::GetRadio(u32 radioId)

@@ -272,6 +272,17 @@ void CWifiServer::SendAllOtherClients(TIndex index, VwifiRadioInfo* radio_info, 
     CInfoWifi& source = (*InfoWifis)[index];
     CCoordinate coo = source;
 
+    // The power the medium propagates from, which is not always the one the
+    // client reported. A client can only report what its regulatory domain
+    // permits -- 12 dBm on 6GHz -- and that is not the EIRP of the device
+    // being modelled. It also has to be comparable with the access point's:
+    // a station quieter than the AP goes unheard well before it stops
+    // hearing, and a controller that decides from what it hears then loses
+    // the station exactly when the decision matters. Pinned by
+    // "vwifi-ctrl power"; the propagation model itself is untouched.
+    TPower txPower = static_cast<TPower>(radio_info->tx_power);
+    source.PinnedTxPower(radio_info->radio_id, txPower);
+
     // What the transmitter is tuned to. This has always been on the wire with
     // every frame; what was missing was any idea of what the receivers were on.
     CChannel txChannel(radio_info->frequency, radio_info->channel_width);
@@ -350,7 +361,7 @@ void CWifiServer::SendAllOtherClients(TIndex index, VwifiRadioInfo* radio_info, 
         VwifiRadioInfo destination_info = *radio_info;
 
         destination_info.tx_power = BoundedPower(
-                destination_info.tx_power
+                txPower
                 - Attenuation(coo.DistanceWith(destination), destination_info.frequency)
                 - WallAttenuationBetween(source.GetHousehold(), destination.GetHousehold(),
                                          txChannel.Centre));
@@ -543,6 +554,17 @@ bool CWifiServer::SetNoiseFloorByMac(const string& mac, u32 radioId, int noiseFl
 	}
 
 	return false;
+}
+
+bool CWifiServer::SetTxPowerByCid(TCID cid, u32 radioId, int txPowerDbm)
+{
+	CInfoWifi* infoWifi=GetReferenceOnInfoWifiByCID(cid);
+
+	if( ! infoWifi )
+		return false;
+
+	// A node that has not reported a radio yet has nothing to pin the power on.
+	return ( infoWifi->SetTxPower(radioId,txPowerDbm) > 0 );
 }
 
 void CWifiServer::SendAllOtherClientsWithoutLoss(TIndex index, VwifiRadioInfo* radio_info, const char* data, ssize_t sizeOfData)

@@ -300,14 +300,16 @@ const char* WallMaterialNames()
 // ---------------------------------------------------------------------------
 
 CRadioState::CRadioState()
-	: RadioId(0), Channel(), TxPower(TPower_MAX), NoiseFloor(DEFAULT_NOISE_FLOOR_DBM),
+	: RadioId(0), Channel(), TxPower(TPower_MAX), TxPowerPinned(false),
+	  NoiseFloor(DEFAULT_NOISE_FLOOR_DBM),
 	  TxUs(0), RxUs(0), ExtUs(0),
 	  LastTxUs(0), LastRxUs(0), LastExtUs(0), LastPushMs(0)
 {
 }
 
 CRadioState::CRadioState(u32 radioId)
-	: RadioId(radioId), Channel(), TxPower(TPower_MAX), NoiseFloor(DEFAULT_NOISE_FLOOR_DBM),
+	: RadioId(radioId), Channel(), TxPower(TPower_MAX), TxPowerPinned(false),
+	  NoiseFloor(DEFAULT_NOISE_FLOOR_DBM),
 	  TxUs(0), RxUs(0), ExtUs(0),
 	  LastTxUs(0), LastRxUs(0), LastExtUs(0), LastPushMs(0)
 {

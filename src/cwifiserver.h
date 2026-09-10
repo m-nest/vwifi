@@ -129,6 +129,11 @@ class CWifiServer : public CSocketServer, public CWifi
 		bool SetBeaconsRelayedByMac(const string& mac, bool relayed);
 		bool SetNoiseFloorByMac(const string& mac, u32 radioId, int noiseFloorDbm);
 
+		// Pins the transmit power of a node's radio. Keyed by CID rather than
+		// by MAC, because this is set per radio and "vwifi-ctrl radios" -- the
+		// only place radio ids are visible -- lists CIDs, not addresses.
+		bool SetTxPowerByCid(TCID cid, u32 radioId, int txPowerDbm);
+
 		// Stops or restores the fabricated acknowledgement of a client's own
 		// transmissions, without touching whether its frames are relayed.
 		bool SetAckFakingByMac(const string& mac, bool faking);

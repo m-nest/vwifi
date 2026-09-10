@@ -358,6 +358,97 @@ int SetNoiseFloor(int argc, char** argv)
 	return 0;
 }
 
+// Pin what a radio transmits at, replacing what its client reports.
+//
+// Keyed by CID and not by MAC, unlike "noise" : the power is per radio, and
+// "vwifi-ctrl radios" -- the only place radio ids can be read -- lists CIDs.
+int SetTxPower(int argc, char** argv)
+{
+	if( argc != 3 && argc != 4 )
+	{
+		cerr<<"Error : power : the number of parameter is uncorrect"<<endl;
+		Help();
+		return 1;
+	}
+
+	if( ! isPositiveInt(argv[1]) )
+	{
+		cerr<<"Error : power : the CID is not an integer"<<endl;
+		return 1;
+	}
+	TCID cid=atoi(argv[1]);
+
+	if( ! isInt(argv[2]) )
+	{
+		cerr<<"Error : power : \""<<argv[2]<<"\" is not a dBm value"<<endl;
+		return 1;
+	}
+	int txPower=atoi(argv[2]);
+
+	// s8 in the model and on the wire. The bound is not a regulatory one --
+	// pinning a power is how a regulatory cap is stepped around -- it only
+	// keeps the value inside the type it is stored in.
+	if( txPower < -128 || txPower > 127 )
+	{
+		cerr<<"Error : power : "<<txPower<<" dBm is outside [-128,127]"<<endl;
+		return 1;
+	}
+
+	// Without a radio id the power goes on every radio the node has, which is
+	// what a single-radio station wants.
+	u32 radioId=RADIO_ID_ALL;
+	if( argc == 4 )
+	{
+		if( ! isPositiveInt(argv[3]) )
+		{
+			cerr<<"Error : power : \""<<argv[3]<<"\" is not a radio id"<<endl;
+			return 1;
+		}
+		radioId=static_cast<u32>(stoi(argv[3]));
+	}
+
+	CSocketClientITCP socket;
+	socket.Init(IP_Ctrl.c_str(),Port_Ctrl);
+
+	if( ! socket.ConnectLoop() )
+	{
+		cerr<<"Error : power : socket.Connect error"<<endl;
+		return 1;
+	}
+
+	TOrder order=TORDER_TXPOWER;
+	if( socket.Send(reinterpret_cast<char*>(&order),sizeof(order)) == SOCKET_ERROR
+	 || socket.Send(reinterpret_cast<char*>(&cid),sizeof(cid)) == SOCKET_ERROR
+	 || socket.Send(reinterpret_cast<char*>(&radioId),sizeof(radioId)) == SOCKET_ERROR
+	 || socket.Send(reinterpret_cast<char*>(&txPower),sizeof(txPower)) == SOCKET_ERROR )
+	{
+		cerr<<"Error : power : socket.Send"<<endl;
+		return 1;
+	}
+
+	int codeError;
+	if( socket.Read(reinterpret_cast<char*>(&codeError),sizeof(codeError)) == SOCKET_ERROR )
+	{
+		cerr<<"Error : power : socket.Read : code"<<endl;
+		return 1;
+	}
+
+	socket.Close();
+
+	if( codeError )
+	{
+		cerr<<"Error : power : CID "<<cid<<" has reported no such radio"<<endl;
+		return 1;
+	}
+
+	cout<<cid<<" : tx power "<<txPower<<" dBm";
+	if( radioId != RADIO_ID_ALL )
+		cout<<" on radio "<<radioId;
+	cout<<endl;
+
+	return 0;
+}
+
 int SetBeaconState(int argc, char** argv)
 {
 	if( argc != 3 )
@@ -587,6 +678,16 @@ void Help()
 	cout<<"		                beacon loss caused one."<<endl;
 	cout<<"		- ack MAC on : acknowledge again"<<endl;
 	cout<<"		- note that a later \"link\" command overwrites this, and vice versa"<<endl;
+	cout<<"	power CID DBM [RADIO]"<<endl;
+	cout<<"		- Pin what radio RADIO of the Client with CID transmits at, or every"<<endl;
+	cout<<"		  radio it has when RADIO is omitted. The Client stops overwriting"<<endl;
+	cout<<"		  it with what it reports."<<endl;
+	cout<<"		- A Client can only report the power its regulatory domain permits,"<<endl;
+	cout<<"		  which is not the EIRP of the device being modelled : 6GHz is capped"<<endl;
+	cout<<"		  at 12 dBm there while a real indoor AP runs 27. It also has to be"<<endl;
+	cout<<"		  comparable with the power of whatever it talks to -- a station"<<endl;
+	cout<<"		  quieter than its AP goes unheard long before it stops hearing."<<endl;
+	cout<<"		- CIDs and radio ids both come from \"radios\""<<endl;
 	cout<<"	radios"<<endl;
 	cout<<"		- List what each Client has reported about its own radios : channel,"<<endl;
 	cout<<"		  power, noise floor, and the airtime each one has accumulated"<<endl;
@@ -1446,6 +1547,9 @@ int main(int argc , char *argv[])
 
 	if( ! strcasecmp(param_cmd[0],"noise") )
 		return SetNoiseFloor(nbr_param_cmd, param_cmd.get());
+
+	if( ! strcasecmp(param_cmd[0],"power") )
+		return SetTxPower(nbr_param_cmd, param_cmd.get());
 
 	if( ! strcasecmp(param_cmd[0],"beacon") )
 		return SetBeaconState(nbr_param_cmd, param_cmd.get());

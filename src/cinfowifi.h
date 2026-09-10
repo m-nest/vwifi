@@ -94,6 +94,16 @@ class CInfoWifi : public CCoordinate
 		// when radioId is RADIO_ID_ALL. Returns how many radios it touched.
 		u32 SetNoiseFloor(u32 radioId, int noiseFloorDbm);
 
+		// Pins the transmit power of one radio, or of every radio this node
+		// has when radioId is RADIO_ID_ALL, so that the client's own reports
+		// stop overwriting it. Returns how many radios it touched.
+		u32 SetTxPower(u32 radioId, int txPowerDbm);
+
+		// True when radioId has a pinned transmit power, which is then written
+		// to `out`. `out` is left alone otherwise, so a caller can seed it with
+		// the reported value and let this override it or not.
+		bool PinnedTxPower(u32 radioId, TPower& out) const;
+
 		// True when any radio of this node could receive a transmission sent on
 		// `channel`, which is the question the forwarding path actually asks :
 		// the relay is per client, and the client clones to all its interfaces.

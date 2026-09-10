@@ -217,6 +217,15 @@ struct CRadioState
 	CChannel Channel;
 	TPower   TxPower;
 
+	// True once "vwifi-ctrl power" has set TxPower, which then stops tracking
+	// the client's reports. A client can only ever report what its regulatory
+	// domain permits, and that is not always the EIRP of the thing being
+	// modelled: a 6GHz station is capped at 12 dBm by the regulatory database
+	// while the access point it talks to runs at 27, so it goes unheard long
+	// before it stops hearing. Pinning is how the model is told what the radio
+	// actually transmits.
+	bool TxPowerPinned;
+
 	// dBm over 20 MHz. -92 by default, which is what hwsim reports, so the
 	// SNR the model computes and the noise the data model shows agree.
 	int NoiseFloor;

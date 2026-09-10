@@ -45,6 +45,7 @@ class CCTRLServer : public CSocketServer, public CSocketServerFunctionITCP
 		void SetWall();
 
 		void SetNoiseFloor();
+		void SetTxPower();
 
 		void SetBeaconState();
 
