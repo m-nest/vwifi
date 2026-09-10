@@ -169,6 +169,35 @@ enum hwsim_commands {
  *	each radio instead of for the wiphy.
  * @__HWSIM_ATTR_MAX: enum limit
  */
+/**
+ * struct hwsim_rx_rate_info - modulation of a frame injected from user space
+ *
+ * HWSIM_ATTR_RX_RATE names an index into the band's legacy bitrate table, so
+ * without this a relayed frame can never be reported as HT, VHT or HE -- 54
+ * Mbit/s is the ceiling on 5 and 6 GHz, and every station reads the same
+ * whatever its link is doing. Must match the driver's definition.
+ */
+struct hwsim_rx_rate_info {
+	u8 encoding;
+	u8 mcs;
+	u8 nss;
+	u8 bw;
+};
+
+enum hwsim_rx_enc {
+	HWSIM_RX_ENC_LEGACY,
+	HWSIM_RX_ENC_HT,
+	HWSIM_RX_ENC_VHT,
+	HWSIM_RX_ENC_HE,
+};
+
+enum hwsim_rx_bw {
+	HWSIM_RX_BW_20,
+	HWSIM_RX_BW_40,
+	HWSIM_RX_BW_80,
+	HWSIM_RX_BW_160,
+};
+
 enum hwsim_attrs {
 	HWSIM_ATTR_UNSPEC,
 	HWSIM_ATTR_ADDR_RECEIVER,
@@ -206,6 +235,7 @@ enum hwsim_attrs {
 	HWSIM_ATTR_SURVEY_RX,
 	HWSIM_ATTR_SURVEY_EXT,
 	HWSIM_ATTR_SURVEY_TX,
+	HWSIM_ATTR_RX_RATE_INFO,
 	__HWSIM_ATTR_MAX,
 };
 #define HWSIM_ATTR_MAX (__HWSIM_ATTR_MAX - 1)

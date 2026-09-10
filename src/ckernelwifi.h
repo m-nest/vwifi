@@ -249,7 +249,7 @@ class CKernelWifi : public intthread::AsyncTask {
 		*	\param freq - frequency
 		*	\return success or failure
 		*/
-		int send_cloned_frame_msg(struct ether_addr *dst, char *data, int data_len,int rate_idx, int signal, uint32_t freq);
+		int send_cloned_frame_msg(struct ether_addr *dst, char *data, int data_len,int rate_idx, int signal, uint32_t freq, u32 width);
 
 		/**
 		 * \brief handle messages received from server

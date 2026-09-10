@@ -285,7 +285,25 @@ void CWifiServer::SendAllOtherClients(TIndex index, VwifiRadioInfo* radio_info, 
 
     // What the transmitter is tuned to. This has always been on the wire with
     // every frame; what was missing was any idea of what the receivers were on.
-    CChannel txChannel(radio_info->frequency, radio_info->channel_width);
+    //
+    // The width on the wire is not usable, though. HWSIM_CMD_FRAME carries no
+    // NL80211_ATTR_CHANNEL_WIDTH -- that is an nl80211 attribute, not an hwsim
+    // one -- so the client's lookup always misses and falls back to 20, and
+    // every frame has claimed 20 MHz whatever its radio was really on. Two
+    // things downstream read that width and both were wrong for it: airtime
+    // was costed as if every transmission were narrow, and the noise floor the
+    // loss model compares against is derived from it, so every band was
+    // evaluated at the 20 MHz floor of -92 dBm. The 3 dB per doubling that
+    // makes a wide channel harder to hear was computed and then never applied.
+    //
+    // The periodic radio report does know the width, so take it from there and
+    // keep the frame's own value only until the transmitter has reported.
+    u32 txWidth = radio_info->channel_width;
+    const CRadioState* txRadio = source.GetRadio(radio_info->radio_id);
+    if (txRadio != NULL && txRadio->Channel.Width != 0)
+        txWidth = txRadio->Channel.Width;
+
+    CChannel txChannel(radio_info->frequency, txWidth);
 
     // Parse the relayed message once. This is the hottest loop in the server --
     // every frame from every client passes through it -- and it needs two
@@ -359,6 +377,10 @@ void CWifiServer::SendAllOtherClients(TIndex index, VwifiRadioInfo* radio_info, 
             continue;
 
         VwifiRadioInfo destination_info = *radio_info;
+
+        // So the receiving client injects at the width the frame really
+        // occupied rather than the 20 MHz the wire claimed.
+        destination_info.channel_width = txWidth;
 
         destination_info.tx_power = BoundedPower(
                 txPower

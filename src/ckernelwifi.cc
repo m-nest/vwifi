@@ -22,6 +22,7 @@
 #include <net/if.h> // struct ifreq
 
 #include "ieee80211.h" // IEEE80211_TX_MAX_RATES
+#include "crf.h"       // NoiseFloorForWidth, DEFAULT_NOISE_FLOOR_DBM
 
 #include <iostream>
 #include <thread>
@@ -281,7 +282,7 @@ int CKernelWifi::process_messages(struct nl_msg *msg)
 	// needs the source address at all.
 	for (auto& macdsthwsim : radio_receivers())
 		if( memcmp(&macsrchwsim,&macdsthwsim,sizeof(struct ether_addr)) )
-			send_cloned_frame_msg(&macdsthwsim, data, data_len, rate_idx, radio_info.tx_power, radio_info.frequency);
+			send_cloned_frame_msg(&macdsthwsim, data, data_len, rate_idx, radio_info.tx_power, radio_info.frequency, radio_info.channel_width);
 	// <------------------------
 
 	return 0 ;
@@ -463,7 +464,56 @@ int CKernelWifi::init_netlink(void)
 	return 1;
 }
 
-int CKernelWifi::send_cloned_frame_msg(struct ether_addr *dst, char *data, int data_len,int rate_idx, int signal, TFrequency freq)
+
+// What modulation a frame arriving at this signal was carried at.
+//
+// The relay has no rate control of its own, so before this it handed hwsim a
+// fixed legacy index and every station reported the same PHY rate whatever its
+// link was doing -- 54 Mbit/s on 5 and 6 GHz, 18 on 2.4. Anything upstream
+// that reads the rate as a proxy for link quality then reads a constant. A
+// Multi-AP controller does exactly that: it infers the station's transmit
+// power from its reported rate to estimate the downlink.
+//
+// Required SNR per MCS, in dB, for the usual 802.11 modulation and coding
+// pairs -- BPSK 1/2 through 1024QAM 5/6. The noise floor is the medium's own,
+// so a frame is reported at the modulation the same conditions would actually
+// have carried.
+static void modulation_for(int signal_dbm, u32 width_mhz, struct hwsim_rx_rate_info* out)
+{
+	static const int REQUIRED_SNR_DB[] = { 2, 5, 9, 11, 15, 18, 20, 25, 29, 31, 34, 37 };
+	static const int MCS_MAX = (sizeof(REQUIRED_SNR_DB) / sizeof(REQUIRED_SNR_DB[0])) - 1;
+
+	u32 width = ( width_mhz ? width_mhz : 20 );
+	int snr = signal_dbm - NoiseFloorForWidth(DEFAULT_NOISE_FLOOR_DBM, width);
+
+	int mcs = 0;
+	for (int i = MCS_MAX; i >= 0; i--)
+	{
+		if (snr >= REQUIRED_SNR_DB[i])
+		{
+			mcs = i;
+			break;
+		}
+	}
+
+	// HE on every band: these radios are all 802.11ax, and it is the only
+	// encoding whose MCS space reaches 11.
+	out->encoding = HWSIM_RX_ENC_HE;
+	out->mcs      = static_cast<u8>(mcs);
+
+	// Two streams, which is what the stations advertise and what the rate
+	// tables above assume. The relay cannot see the real antenna count of
+	// the transmitter, so this is a property of the twin rather than a
+	// measurement.
+	out->nss = 2;
+
+	if      (width >= 160) out->bw = HWSIM_RX_BW_160;
+	else if (width >=  80) out->bw = HWSIM_RX_BW_80;
+	else if (width >=  40) out->bw = HWSIM_RX_BW_40;
+	else                   out->bw = HWSIM_RX_BW_20;
+}
+
+int CKernelWifi::send_cloned_frame_msg(struct ether_addr *dst, char *data, int data_len,int rate_idx, int signal, TFrequency freq, u32 width)
 {
 	struct nl_msg *msg;
 
@@ -496,6 +546,19 @@ int CKernelWifi::send_cloned_frame_msg(struct ether_addr *dst, char *data, int d
 		return 0 ;
 	}
 	if ( freq && nla_put_u32(msg, HWSIM_ATTR_FREQ, freq) )
+	{
+		std::cerr << "Error filling payload" << std::endl;
+		nlmsg_free(msg);
+		return 0 ;
+	}
+
+	// The modulation this signal would really have carried. A driver without
+	// the matching patch ignores the attribute and falls back to
+	// HWSIM_ATTR_RX_RATE above, so this stays safe against an unpatched hwsim.
+	struct hwsim_rx_rate_info rate_info;
+	modulation_for(signal, width, &rate_info);
+
+	if ( nla_put(msg, HWSIM_ATTR_RX_RATE_INFO, sizeof(rate_info), &rate_info) )
 	{
 		std::cerr << "Error filling payload" << std::endl;
 		nlmsg_free(msg);
@@ -598,6 +661,7 @@ void CKernelWifi::recv_from_server(){
 
 	/* we get frequence */
 	TFrequency freq = radio_info.frequency;
+	u32 width       = radio_info.channel_width;
 	/* fallback - just in case */
 	if (freq == 0)
 	{
@@ -644,7 +708,7 @@ void CKernelWifi::recv_from_server(){
 
 	// Once per radio, not once per interface: see radio_receivers().
 	for (auto& macdsthwsim : radio_receivers())
-		send_cloned_frame_msg(&macdsthwsim, data, data_len, rate_idx, signal, freq);
+		send_cloned_frame_msg(&macdsthwsim, data, data_len, rate_idx, signal, freq, width);
 }
 
 void  CKernelWifi::monitor_hwsim_loop()
